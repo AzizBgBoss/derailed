@@ -10,6 +10,8 @@ NAME 		:= derailed
 GAME_TITLE	:= Derailed
 GAME_SUBTITLE	:= By AzizBgBoss
 
+GFXDIRS		:= gfx
+
 # Libraries
 # ---------
 
