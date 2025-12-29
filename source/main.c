@@ -36,6 +36,7 @@ struct Player
     int direction;
     int objectHeld;
     int quantityHeld;
+    int maxQuantityHeld;
     int selectedObjectX;
     int selectedObjectY;
     bool selectedObject;
@@ -190,7 +191,7 @@ start:
 
     printf("Press START to exit to loader\n");
 
-    struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 0, 0, false};
+    struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
 
     struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01};
 
@@ -276,8 +277,19 @@ start:
             player.y = newY;
 
         // Select object automatically
+
         player.selectedObjectX = (player.x + 8) / TILE_SIZE;
         player.selectedObjectY = (player.y + 8) / TILE_SIZE;
+
+        // Automatic pickup if same thing held and selected
+        if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
+            player.quantityHeld < player.maxQuantityHeld &&
+            (player.selectedObjectX != oldX || player.selectedObjectY != oldY))
+        {
+            player.quantityHeld++;
+            setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+        }
+
         if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
         {
             if (worldObjects[player.selectedObjectX][player.selectedObjectY] == OBJECT_RAIL)
@@ -293,7 +305,7 @@ start:
 
                     (worldObjects[player.selectedObjectX - 1][player.selectedObjectY] == OBJECT_RAIL &&
                      worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL))
-                     
+
                     player.selectedObject = false;
                 else
                     player.selectedObject = true;
@@ -310,7 +322,7 @@ start:
         {
             if (player.objectHeld != EMPTY)
             {
-                if (player.selectedObject)
+                if (player.selectedObject && player.quantityHeld == 1)
                 {
                     // Swap object
                     int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
@@ -321,7 +333,7 @@ start:
                 {
                     // Place object
                     setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
-                    player.objectHeld = EMPTY;
+                    player.quantityHeld--;
                 }
             }
             else if (player.selectedObject)
@@ -329,8 +341,12 @@ start:
                 // Pick up object
                 player.objectHeld = worldObjects[player.selectedObjectX][player.selectedObjectY];
                 setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+                player.quantityHeld = 1;
             }
         }
+
+        if (player.quantityHeld == 0)
+            player.objectHeld = EMPTY;
 
         // test for locomotive derailment
         if (locomotive.direction == DIR_RIGHT)
