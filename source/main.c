@@ -6,6 +6,9 @@
 #include "ui.h"
 #include "wagons.h"
 
+#define SCREEN_WIDTH 256
+#define SCREEN_HEIGHT 192
+
 #define WORLD_WIDTH 32
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
@@ -35,6 +38,8 @@ int bg1;
 uint16_t *bg1Map;
 
 unsigned int frames = 0;
+
+int scroll = 0;
 
 int lastPlacedX;
 int lastPlacedY;
@@ -87,15 +92,17 @@ uint8_t worldHealth[WORLD_WIDTH][WORLD_HEIGHT];
 
 void bg0SetTile(int x, int y, int tile)
 {
-    if (x < 0 || x >= 32 || y < 0 || y >= 32)
+    if (x < 0 || x >= 64 || y < 0 || y >= 32)
         return;
-    bg0Map[x + y * 32] = tile;
+    if (x < 32) bg0Map[x + y * 32] = tile;
+    else bg0Map[x - 32 + (y + 32) * 32] = tile;
 }
 void bg1SetTile(int x, int y, int tile)
 {
-    if (x < 0 || x >= 32 || y < 0 || y >= 32)
+    if (x < 0 || x >= 64 || y < 0 || y >= 32)
         return;
-    bg1Map[x + y * 32] = tile;
+    if (x < 32) bg1Map[x + y * 32] = tile;
+    else bg1Map[x - 32 + (y + 32) * 32] = tile;
 }
 
 void setWorldTile(int x, int y, int tile)
@@ -182,10 +189,10 @@ bool checkCollision(int newX, int newY)
 
 void updateWagon(int id)
 {
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[0], wagons[id]->gfx, 8 * 8 * 2);                      // Top-left quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[1] + 8 * 4, wagons[id]->gfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[0] + 8 * 8, wagons[id]->gfx + 8 * 8 * 2, 8 * 8 * 2);  // Bottom-left quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0], wagons[id]->gfx, 8 * 8 * 2);                      // Top-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 4, wagons[id]->gfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0] + 8 * 8, wagons[id]->gfx + 8 * 8 * 2, 8 * 8 * 2);  // Bottom-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
 }
 
 int main(int argc, char **argv)
@@ -195,17 +202,19 @@ start:
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
 
-    bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_512x512, 0, 1);
+    bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_512x256, 0, 1);
     dmaCopy(tilemapTiles, bgGetGfxPtr(bg0), tilemapTilesLen);
     dmaCopy(tilemapPal, BG_PALETTE, tilemapPalLen);
 
     bgSetPriority(bg0, 3);
+    bgWrapOn(bg0);
 
     bg0Map = (uint16_t *)bgGetMapPtr(bg0);
 
-    bg1 = bgInit(1, BgType_Text8bpp, BgSize_T_512x512, 4, 1); // Shared tilemap
+    bg1 = bgInit(1, BgType_Text8bpp, BgSize_T_512x256, 4, 1); // Shared tilemap
 
     bgSetPriority(bg1, 2);
+    bgWrapOn(bg1);
 
     bg1Map = (uint16_t *)bgGetMapPtr(bg1);
 
@@ -294,7 +303,7 @@ start:
 
     printf("Press START to exit to loader\n");
 
-    for (int x = 0; x < WORLD_WIDTH; x++)
+    for (int x = 0; x < WORLD_WIDTH / 2; x++)
     {
         for (int y = 0; y < 3; y++)
         {
@@ -317,13 +326,32 @@ start:
         }
     }
 
-    for (int x = 0; x < 10; x++)
+    for (int x = WORLD_WIDTH / 2; x < WORLD_WIDTH; x++)
     {
-        setWorldObject(x, 5, OBJECT_RAIL);
+        for (int y = 0; y < 3; y++)
+        {
+            setWorldTile(x, y, TILE_ROCK);
+        }
+
+        for (int y = 3; y < WORLD_HEIGHT - 3; y++)
+        {
+            setWorldTile(x, y, TILE_EMPTY);
+        }
+
+        for (int y = WORLD_HEIGHT - 3; y < WORLD_HEIGHT; y++)
+        {
+            setWorldTile(x, y, TILE_TREE);
+        }
+
+        for (int y = 0; y < WORLD_HEIGHT; y++)
+        {
+            setWorldObject(x, y, EMPTY);
+        }
     }
 
     for (int x = 0; x < WORLD_WIDTH / 2; x++)
     {
+        setWorldObject(x, 5, OBJECT_RAIL);
         setWorldObject(x * 2, 6, OBJECT_WOOD);
         setWorldObject(x * 2 + 1, 7, OBJECT_IRON);
     }
@@ -645,18 +673,28 @@ start:
         railBuilder.x = railStorage.x - railBuilder.sizeX;
         railBuilder.y = railStorage.y;
 
+        if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2) scroll = WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2;
+        else if (locomotive.x + locomotive.sizeX >= SCREEN_WIDTH / 2) scroll = locomotive.x + locomotive.sizeX - SCREEN_WIDTH;
+        else scroll = 0;
+
         if (player.selectedObject)
-            oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE, player.selectedObjectY * TILE_SIZE);
+            oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE - scroll, player.selectedObjectY * TILE_SIZE);
         else if (player.selectedWagon)
-            oamSetXY(&oamMain, 1, wagons[player.selectedWagonId]->x + player.selectedWagonSlot * TILE_SIZE, wagons[player.selectedWagonId]->y);
+            oamSetXY(&oamMain, 1, wagons[player.selectedWagonId]->x + player.selectedWagonSlot * TILE_SIZE - scroll, wagons[player.selectedWagonId]->y);
         else
             oamSetXY(&oamMain, 1, -16, -16);
 
-        oamSetXY(&oamMain, 0, player.x, player.y);
-        oamSetXY(&oamMain, 2, locomotive.x, locomotive.y);
-        oamSetXY(&oamMain, 3, railStorage.x, railStorage.y);
-        oamSetXY(&oamMain, 4, railBuilder.x, railBuilder.y);
+        oamSetXY(&oamMain, 0, player.x - scroll, player.y);
 
+        for (int i = 0; i < WAGONS; i++)
+        {
+            oamSetXY(&oamMain, i + 2, wagons[i]->x - scroll, wagons[i]->y);
+        }
+
+        bgSetScroll(bg0, scroll, 0);
+        bgSetScroll(bg1, scroll, 0);
+        
+        bgUpdate();
         oamUpdate(&oamMain);
 
         printf("\x1b[2J");
