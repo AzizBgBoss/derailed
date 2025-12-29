@@ -2,15 +2,20 @@
 #include <nds.h>
 
 #include "tilemap.h"
-#include "sprites.h"
+#include "player.h"
+#include "ui.h"
 
 #define WORLD_WIDTH 16
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
 
-#define TILE_EMPTY 0
-#define TILE_TREE 1
-#define TILE_ROCK 2
+#define EMPTY 0
+#define TILE_EMPTY 1
+#define TILE_TREE 2
+#define TILE_ROCK 3
+#define OBJECT_RAIL 4
+#define OBJECT_WOOD 5
+#define OBJECT_IRON 6
 
 #define DIR_UP 0
 #define DIR_DOWN 1
@@ -19,23 +24,37 @@
 
 int bg0;
 uint16_t *bg0Map;
+int bg1;
+uint16_t *bg1Map;
 
 struct Player
 {
     int x;
     int y;
     int direction;
+    int objectHeld;
+    int quantityHeld;
+    int selectedObjectX;
+    int selectedObjectY;
+    bool selectedObject;
 };
 
-struct Player player = {0, 0, DIR_DOWN};
+struct Player player = {0, 0, DIR_DOWN, 0, 0, 0, 0, false};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
+uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
 
 void bg0SetTile(int x, int y, int tile)
 {
     if (x < 0 || x >= 32 || y < 0 || y >= 32)
         return;
     bg0Map[x + y * 32] = tile;
+}
+void bg1SetTile(int x, int y, int tile)
+{
+    if (x < 0 || x >= 32 || y < 0 || y >= 32)
+        return;
+    bg1Map[x + y * 32] = tile;
 }
 
 void setWorldTile(int x, int y, int tile)
@@ -45,6 +64,15 @@ void setWorldTile(int x, int y, int tile)
     bg0SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
     bg0SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
     bg0SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
+}
+
+void setWorldObject(int x, int y, int tile)
+{
+    worldObjects[x][y] = tile;
+    bg1SetTile(x * 2, y * 2, tile * 4);
+    bg1SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
+    bg1SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
+    bg1SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
 }
 
 int main(int argc, char **argv)
@@ -61,16 +89,25 @@ int main(int argc, char **argv)
 
     bg0Map = (uint16_t *)bgGetMapPtr(bg0);
 
-    dmaFillHalfWords(TILE_EMPTY, bg0Map, 32 * 32 * 2);
+    bg1 = bgInit(1, BgType_Text8bpp, BgSize_T_512x512, 4, 1); // Shared tilemap
+
+    bgSetPriority(bg1, 2);
+
+    bg1Map = (uint16_t *)bgGetMapPtr(bg1);
+
+    dmaFillHalfWords(TILE_EMPTY, bg0Map, 64 * 64 * 2);
+    dmaFillHalfWords(EMPTY, bg1Map, 64 * 64 * 2);
 
     oamInit(&oamMain, SpriteMapping_1D_128, false);
 
     // Allocate space for the tiles and copy them there
     u16 *playerGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-    dmaCopy(spritesTiles, playerGfx, 8 * 8 * 4 * 2); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    dmaCopy(playerTiles, playerGfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    u16 *cursorGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
+    dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
 
     // Copy palette
-    dmaCopy(spritesPal, SPRITE_PALETTE, spritesPalLen);
+    dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
 
     oamSet(&oamMain, 0,
            0, 0,                                         // X, Y
@@ -78,6 +115,17 @@ int main(int argc, char **argv)
            0,                                            // Palette index
            SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
            playerGfx,                                    // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+    oamSet(&oamMain, 1,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
+           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           cursorGfx,                                    // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -106,6 +154,22 @@ int main(int argc, char **argv)
         {
             setWorldTile(x, y, TILE_ROCK);
         }
+
+        for (int y = 0; y < WORLD_HEIGHT; y++)
+        {
+            setWorldObject(x, y, EMPTY);
+        }
+    }
+
+    for (int x = 0; x < WORLD_WIDTH; x++)
+    {
+        setWorldObject(x, 5, OBJECT_RAIL);
+    }
+
+    for (int x = 0; x < WORLD_WIDTH / 2; x++)
+    {
+        setWorldObject(x * 2, 6, OBJECT_WOOD);
+        setWorldObject(x * 2 + 1, 7, OBJECT_IRON);
     }
 
     while (1)
@@ -115,6 +179,7 @@ int main(int argc, char **argv)
         scanKeys();
 
         int held = keysHeld();
+        int down = keysDown();
         if (held & KEY_START)
             break;
 
@@ -122,25 +187,25 @@ int main(int argc, char **argv)
         {
             player.y--;
             player.direction = DIR_UP;
-            dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_DOWN)
         {
             player.y++;
             player.direction = DIR_DOWN;
-            dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_LEFT)
         {
             player.x--;
             player.direction = DIR_LEFT;
-            dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_RIGHT)
         {
             player.x++;
             player.direction = DIR_RIGHT;
-            dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
 
         if (player.x < 0)
@@ -152,29 +217,56 @@ int main(int argc, char **argv)
         if (player.y >= WORLD_HEIGHT * TILE_SIZE - TILE_SIZE)
             player.y = WORLD_HEIGHT * TILE_SIZE - TILE_SIZE - 1;
 
+        // Select object automatically
+        player.selectedObjectX = (player.x + 8) / TILE_SIZE;
+        player.selectedObjectY = (player.y + 8) / TILE_SIZE;
+        if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
+        {
+            player.selectedObject = true;
+        }
+        else
+        {
+            player.selectedObject = false;
+        }
+
+        if (down & KEY_A)
+        {
+            if (player.objectHeld != EMPTY)
+            {
+                if (player.selectedObject)
+                {
+                    // Swap object
+                    int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
+                    setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
+                    player.objectHeld = temp;
+                }
+                else
+                {
+                    // Place object
+                    setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
+                    player.objectHeld = EMPTY;
+                }
+            }
+            else if (player.selectedObject)
+            {
+                // Pick up object
+                player.objectHeld = worldObjects[player.selectedObjectX][player.selectedObjectY];
+                setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+            }
+        }
+
+        if (player.selectedObject)
+            oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE, player.selectedObjectY * TILE_SIZE);
+        else
+            oamSetXY(&oamMain, 1, -16, -16);
+
         oamSetXY(&oamMain, 0, player.x, player.y);
         oamUpdate(&oamMain);
 
-        printf("\x1b[3;0H");
-        for (int y = 0; y < WORLD_HEIGHT; y++)
-        {
-            for (int x = 0; x < WORLD_WIDTH; x++)
-            {
-                switch (worldTerrain[x][y])
-                {
-                case TILE_EMPTY:
-                    printf(" ");
-                    break;
-                case TILE_TREE:
-                    printf("T");
-                    break;
-                case TILE_ROCK:
-                    printf("R");
-                    break;
-                }
-            }
-            printf("\n");
-        }
+        printf("\x1b[2J");
+        printf("x: %d, y: %d, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
+        printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
+        printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
     }
 
     return 0;
