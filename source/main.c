@@ -283,8 +283,7 @@ start:
 
         // Automatic pickup if same thing held and selected
         if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
-            player.quantityHeld < player.maxQuantityHeld &&
-            (player.selectedObjectX != oldX || player.selectedObjectY != oldY))
+            player.quantityHeld < player.maxQuantityHeld)
         {
             player.quantityHeld++;
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
