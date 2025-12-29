@@ -6,7 +6,7 @@
 #include "ui.h"
 #include "wagons.h"
 
-#define WORLD_WIDTH 16
+#define WORLD_WIDTH 32
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
 #define PLAYER_SIZE 16
@@ -58,6 +58,7 @@ struct Player
 
 struct Wagon
 {
+    u16 *gfx;
     float x;
     float y;
     int sizeX;
@@ -72,10 +73,13 @@ struct Wagon
 
 struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
 
-struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
-struct Wagon railBuilder = {0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
+struct Wagon locomotive = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
+struct Wagon railStorage = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
+struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {EMPTY, EMPTY}};
 
-struct Wagon *wagons[2] = {&locomotive, &railBuilder};
+#define WAGONS 3
+
+struct Wagon *wagons[WAGONS] = {&locomotive, &railStorage, &railBuilder};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
@@ -150,7 +154,7 @@ bool checkCollision(int newX, int newY)
     if (newX < 0 || newX + PLAYER_SIZE > WORLD_WIDTH * TILE_SIZE || newY < 0 || newY + PLAYER_SIZE > WORLD_HEIGHT * TILE_SIZE)
         return true;
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < WAGONS; i++)
     {
         struct Wagon *wagon = wagons[i];
         if ((newX >= wagon->x && newX < wagon->x + wagon->sizeX &&
@@ -174,6 +178,14 @@ bool checkCollision(int newX, int newY)
         return true;
 
     return false;
+}
+
+void updateWagon(int id)
+{
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[0], wagons[id]->gfx, 8 * 8 * 2);                      // Top-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[1] + 8 * 4, wagons[id]->gfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[0] + 8 * 8, wagons[id]->gfx + 8 * 8 * 2, 8 * 8 * 2);  // Bottom-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * 3 * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
 }
 
 int main(int argc, char **argv)
@@ -207,10 +219,12 @@ start:
     dmaCopy(playerTiles, playerGfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
     u16 *cursorGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
     dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
-    u16 *locomotiveGfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
-    dmaCopy(wagonsTiles, locomotiveGfx, 8 * 8 * 4 * 2);
-    u16 *railBuilderGfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
-    dmaCopy(wagonsTiles + 8 * 8 * 2, railBuilderGfx, 8 * 8 * 4 * 2);
+    locomotive.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
+    dmaCopy(wagonsTiles, locomotive.gfx, 8 * 8 * 4 * 2);
+    railStorage.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
+    dmaCopy(wagonsTiles + 8 * 8 * 2, railStorage.gfx, 8 * 8 * 4 * 2);
+    railBuilder.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * 2, railBuilder.gfx, 8 * 8 * 4 * 2);
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -243,7 +257,7 @@ start:
            0,                                            // Priority
            0,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
-           locomotiveGfx,                                // Graphics offset
+           locomotive.gfx,                                // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -255,7 +269,19 @@ start:
            0,                                            // Priority
            0,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
-           railBuilderGfx,                               // Graphics offset
+           railStorage.gfx,                               // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+
+    oamSet(&oamMain, 4,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
+           SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
+           railBuilder.gfx,                               // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -416,6 +442,18 @@ start:
                     }
                 }
             }
+
+            if (railStorage.quantity[0] && railStorage.quantity[1] && railBuilder.quantity[0] < railBuilder.maxQuantity)
+            {
+                // Take one wood and one iron from storage and turn them into a rail through the builder
+                railBuilder.slots[0] = OBJECT_RAIL;
+                railBuilder.quantity[0]++;
+                updateWagon(2);
+
+                railStorage.quantity[0]--;
+                railStorage.quantity[1]--;
+                updateWagon(1);
+            }
         }
 
         int targetWagonX, targetWagonY;
@@ -442,7 +480,7 @@ start:
         }
 
         player.selectedWagon = false;
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < WAGONS; i++)
         {
             struct Wagon *wagon = wagons[i];
             if (targetWagonY >= wagon->y && targetWagonY < wagon->y + wagon->sizeY &&
@@ -467,6 +505,17 @@ start:
                     player.selectedWagonSlot = 1;
                     player.selectedWagonId = i;
                     player.selectedWagon = true;
+                } else if (targetWagonX >= wagon->x &&
+                    targetWagonX < wagon->x + wagon->sizeX / 2 &&
+                    player.objectHeld == EMPTY &&
+                    wagon->acceptedObjects[0] == EMPTY &&
+                    wagon->maxQuantity > 0 &&
+                    wagon->quantity[0] > 0 &&
+                    wagon->slots[0] != EMPTY) // slots with no accepted objects but a maximum of objects means its an output slot
+                {
+                    player.selectedWagonSlot = 0;
+                    player.selectedWagonId = i;
+                    player.selectedWagon = true;
                 }
             }
         }
@@ -482,7 +531,8 @@ start:
         // Automatic pickup if same thing held and selected
         if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
             player.quantityHeld < player.maxQuantityHeld &&
-            justPlaced == false)
+            justPlaced == false &&
+            worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
         {
             player.quantityHeld++;
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
@@ -539,17 +589,8 @@ start:
                         wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot]++;
                         player.quantityHeld--;
                     }
-                    player.objectHeld = EMPTY;
 
-                    // I'm so proud of the following part, it too:
-
-                    int id = player.selectedWagonId;
-
-                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[0], railBuilderGfx, 8 * 8 * 2);                     // Top-left quarter
-                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[0] + 8 * 8, railBuilderGfx + 8 * 8 * 2, 8 * 8 * 2); // Bottom-left quarter
-
-                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[1] + 8 * 4, railBuilderGfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
-                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[1] + 8 * 12, railBuilderGfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
+                    updateWagon(player.selectedWagonId);
                 }
                 else
                 {
@@ -560,6 +601,17 @@ start:
                     lastPlacedY = player.selectedObjectY;
                     justPlaced = true;
                 }
+            }
+            else if (player.selectedWagon) // Playing is selecting an output wagon
+            {
+                player.objectHeld = wagons[player.selectedWagonId]->slots[player.selectedWagonSlot];
+                while (wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] > 0 && player.quantityHeld < player.maxQuantityHeld)
+                {
+                    wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot]--;
+                    player.quantityHeld++;
+                }
+
+                updateWagon(player.selectedWagonId);
             }
             else if (player.selectedObject)
             {
@@ -583,12 +635,15 @@ start:
                 locomotive.x += locomotive.speed;
                 if (locomotive.x + locomotive.sizeX >= player.x && locomotive.x + locomotive.sizeX < player.x + PLAYER_SIZE &&
                     ((locomotive.y >= player.y && locomotive.y < player.y + PLAYER_SIZE) ||
-                     (locomotive.y + locomotive.sizeY >= player.y && locomotive.y + locomotive.sizeY < player.y + PLAYER_SIZE))) // The front of the locomotive is colliding with the player
+                     (locomotive.y + locomotive.sizeY > player.y && locomotive.y + locomotive.sizeY <= player.y + PLAYER_SIZE))) // The front of the locomotive is colliding with the player
                     player.x++;
             }
         }
-        railBuilder.x = locomotive.x - railBuilder.sizeX;
-        railBuilder.y = locomotive.y;
+        railStorage.x = locomotive.x - railStorage.sizeX;
+        railStorage.y = locomotive.y;
+
+        railBuilder.x = railStorage.x - railBuilder.sizeX;
+        railBuilder.y = railStorage.y;
 
         if (player.selectedObject)
             oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE, player.selectedObjectY * TILE_SIZE);
@@ -599,7 +654,8 @@ start:
 
         oamSetXY(&oamMain, 0, player.x, player.y);
         oamSetXY(&oamMain, 2, locomotive.x, locomotive.y);
-        oamSetXY(&oamMain, 3, railBuilder.x, railBuilder.y);
+        oamSetXY(&oamMain, 3, railStorage.x, railStorage.y);
+        oamSetXY(&oamMain, 4, railBuilder.x, railBuilder.y);
 
         oamUpdate(&oamMain);
 
