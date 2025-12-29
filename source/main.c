@@ -4,6 +4,7 @@
 #include "tilemap.h"
 #include "player.h"
 #include "ui.h"
+#include "wagons.h"
 
 #define WORLD_WIDTH 16
 #define WORLD_HEIGHT 12
@@ -30,8 +31,8 @@ uint16_t *bg1Map;
 
 struct Player
 {
-    int x;
-    int y;
+    float x;
+    float y;
     int direction;
     int objectHeld;
     int quantityHeld;
@@ -40,7 +41,15 @@ struct Player
     bool selectedObject;
 };
 
-struct Player player = {0, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 0, 0, false};
+struct Wagon
+{
+    float x;
+    float y;
+    int sizeX;
+    int sizeY;
+    int direction;
+    float speed;
+};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
@@ -105,6 +114,7 @@ bool checkCollision(int newX, int newY)
 
 int main(int argc, char **argv)
 {
+start:
     videoSetMode(MODE_0_2D);
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
@@ -133,6 +143,8 @@ int main(int argc, char **argv)
     dmaCopy(playerTiles, playerGfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
     u16 *cursorGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
     dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
+    u16 *locomotiveGfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
+    dmaCopy(wagonsTiles, locomotiveGfx, 8 * 8 * 4 * 2);
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -160,11 +172,27 @@ int main(int argc, char **argv)
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
+    oamSet(&oamMain, 2,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
+           SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
+           locomotiveGfx,                                // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+
     consoleDemoInit();
 
     printf("Derailed by AzizBgBoss\n");
 
     printf("Press START to exit to loader\n");
+
+    struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 0, 0, false};
+
+    struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01};
 
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
@@ -189,7 +217,7 @@ int main(int argc, char **argv)
         }
     }
 
-    for (int x = 0; x < WORLD_WIDTH; x++)
+    for (int x = 0; x < 5; x++)
     {
         setWorldObject(x, 5, OBJECT_RAIL);
     }
@@ -199,6 +227,9 @@ int main(int argc, char **argv)
         setWorldObject(x * 2, 6, OBJECT_WOOD);
         setWorldObject(x * 2 + 1, 7, OBJECT_IRON);
     }
+
+    locomotive.x = 0;
+    locomotive.y = 5 * TILE_SIZE;
 
     while (1)
     {
@@ -249,7 +280,26 @@ int main(int argc, char **argv)
         player.selectedObjectY = (player.y + 8) / TILE_SIZE;
         if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
         {
-            player.selectedObject = true;
+            if (worldObjects[player.selectedObjectX][player.selectedObjectY] == OBJECT_RAIL)
+            {
+                //   x
+                // x R x      Check these tiles and make sure the rail isnt intermediate between two other rails
+                //   x        if it is, then it is not selected
+                if ((player.selectedObjectX >= locomotive.x / TILE_SIZE &&
+                     player.selectedObjectX <= (locomotive.x + locomotive.sizeX) / TILE_SIZE) ||
+
+                    (player.selectedObjectX == 0 &&
+                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL) ||
+
+                    (worldObjects[player.selectedObjectX - 1][player.selectedObjectY] == OBJECT_RAIL &&
+                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL))
+                     
+                    player.selectedObject = false;
+                else
+                    player.selectedObject = true;
+            }
+            else
+                player.selectedObject = true;
         }
         else
         {
@@ -282,16 +332,27 @@ int main(int argc, char **argv)
             }
         }
 
+        // test for locomotive derailment
+        if (locomotive.direction == DIR_RIGHT)
+        {
+            if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)locomotive.y / TILE_SIZE] != OBJECT_RAIL)
+                goto start;
+            else
+                locomotive.x += locomotive.speed;
+        }
+
         if (player.selectedObject)
             oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE, player.selectedObjectY * TILE_SIZE);
         else
             oamSetXY(&oamMain, 1, -16, -16);
 
         oamSetXY(&oamMain, 0, player.x, player.y);
+        oamSetXY(&oamMain, 2, locomotive.x, locomotive.y);
+
         oamUpdate(&oamMain);
 
         printf("\x1b[2J");
-        printf("x: %d, y: %d, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
+        printf("x: %f, y: %f, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
         printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
         printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
     }
