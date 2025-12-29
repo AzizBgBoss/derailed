@@ -8,6 +8,7 @@
 #define WORLD_WIDTH 16
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
+#define PLAYER_SIZE 16
 
 #define EMPTY 0
 #define TILE_EMPTY 1
@@ -39,7 +40,7 @@ struct Player
     bool selectedObject;
 };
 
-struct Player player = {0, 0, DIR_DOWN, 0, 0, 0, 0, false};
+struct Player player = {0, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 0, 0, false};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
@@ -73,6 +74,33 @@ void setWorldObject(int x, int y, int tile)
     bg1SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
     bg1SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
     bg1SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
+}
+
+static inline bool isSolidTerrain(int tx, int ty)
+{
+    if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT)
+        return true; // treat out of bounds as solid
+
+    return (worldTerrain[tx][ty] != TILE_EMPTY);
+}
+
+bool checkCollision(int newX, int newY)
+{
+    int left = newX / TILE_SIZE;
+    int right = (newX + PLAYER_SIZE - 1) / TILE_SIZE;
+    int top = newY / TILE_SIZE;
+    int bottom = (newY + PLAYER_SIZE - 1) / TILE_SIZE;
+
+    if (isSolidTerrain(left, top))
+        return true;
+    if (isSolidTerrain(right, top))
+        return true;
+    if (isSolidTerrain(left, bottom))
+        return true;
+    if (isSolidTerrain(right, bottom))
+        return true;
+
+    return false;
 }
 
 int main(int argc, char **argv)
@@ -183,39 +211,38 @@ int main(int argc, char **argv)
         if (held & KEY_START)
             break;
 
+        int newX = player.x;
+        int newY = player.y;
+
         if (held & KEY_UP)
         {
-            player.y--;
+            newY--;
             player.direction = DIR_UP;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_DOWN)
         {
-            player.y++;
+            newY++;
             player.direction = DIR_DOWN;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_LEFT)
         {
-            player.x--;
+            newX--;
             player.direction = DIR_LEFT;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_RIGHT)
         {
-            player.x++;
+            newX++;
             player.direction = DIR_RIGHT;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
+        if (!checkCollision(newX, player.y))
+            player.x = newX;
 
-        if (player.x < 0)
-            player.x = 0;
-        if (player.x >= WORLD_WIDTH * TILE_SIZE - TILE_SIZE)
-            player.x = WORLD_WIDTH * TILE_SIZE - TILE_SIZE - 1;
-        if (player.y < 0)
-            player.y = 0;
-        if (player.y >= WORLD_HEIGHT * TILE_SIZE - TILE_SIZE)
-            player.y = WORLD_HEIGHT * TILE_SIZE - TILE_SIZE - 1;
+        if (!checkCollision(player.x, newY))
+            player.y = newY;
 
         // Select object automatically
         player.selectedObjectX = (player.x + 8) / TILE_SIZE;
