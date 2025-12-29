@@ -26,6 +26,9 @@
 #define DIR_LEFT 2
 #define DIR_RIGHT 3
 
+// TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
+// There's also a lot of magic numbers, i need to define them
+
 int bg0;
 uint16_t *bg0Map;
 int bg1;
@@ -48,6 +51,9 @@ struct Player
     int selectedObjectX;
     int selectedObjectY;
     bool selectedObject;
+    int selectedWagonId;
+    int selectedWagonSlot;
+    bool selectedWagon;
 };
 
 struct Wagon
@@ -58,11 +64,18 @@ struct Wagon
     int sizeY;
     int direction;
     float speed;
+    int slots[2];
+    int quantity[2];
+    int maxQuantity;
+    int acceptedObjects[2];
 };
 
 struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
 
-struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01};
+struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
+struct Wagon railBuilder = {0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
+
+struct Wagon *wagons[2] = {&locomotive, &railBuilder};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
@@ -103,7 +116,8 @@ void setWorldObject(int x, int y, int tile)
 void setWorldHealth(int x, int y, int health)
 {
     worldHealth[x][y] = health;
-    if (worldHealth[x][y] == 0) {
+    if (worldHealth[x][y] == 0)
+    {
         if (worldTerrain[x][y] == TILE_TREE)
             setWorldObject(x, y, OBJECT_WOOD);
         else if (worldTerrain[x][y] == TILE_ROCK)
@@ -136,15 +150,19 @@ bool checkCollision(int newX, int newY)
     if (newX < 0 || newX + PLAYER_SIZE > WORLD_WIDTH * TILE_SIZE || newY < 0 || newY + PLAYER_SIZE > WORLD_HEIGHT * TILE_SIZE)
         return true;
 
-    if ((newX >= locomotive.x && newX < locomotive.x + locomotive.sizeX &&
-         newY >= locomotive.y && newY < locomotive.y + locomotive.sizeY) ||
-        (newX + PLAYER_SIZE >= locomotive.x && newX + PLAYER_SIZE < locomotive.x + locomotive.sizeX &&
-         newY >= locomotive.y && newY < locomotive.y + locomotive.sizeY) ||
-        (newX >= locomotive.x && newX < locomotive.x + locomotive.sizeX &&
-         newY + PLAYER_SIZE >= locomotive.y && newY + PLAYER_SIZE < locomotive.y + locomotive.sizeY) ||
-        (newX + PLAYER_SIZE >= locomotive.x && newX + PLAYER_SIZE < locomotive.x + locomotive.sizeX &&
-         newY + PLAYER_SIZE >= locomotive.y && newY + PLAYER_SIZE < locomotive.y + locomotive.sizeY))
-        return true;
+    for (int i = 0; i < 2; i++)
+    {
+        struct Wagon *wagon = wagons[i];
+        if ((newX >= wagon->x && newX < wagon->x + wagon->sizeX &&
+             newY >= wagon->y && newY < wagon->y + wagon->sizeY) ||
+            (newX + PLAYER_SIZE >= wagon->x && newX + PLAYER_SIZE < wagon->x + wagon->sizeX &&
+             newY >= wagon->y && newY < wagon->y + wagon->sizeY) ||
+            (newX >= wagon->x && newX < wagon->x + wagon->sizeX &&
+             newY + PLAYER_SIZE >= wagon->y && newY + PLAYER_SIZE < wagon->y + wagon->sizeY) ||
+            (newX + PLAYER_SIZE >= wagon->x && newX + PLAYER_SIZE < wagon->x + wagon->sizeX &&
+             newY + PLAYER_SIZE >= wagon->y && newY + PLAYER_SIZE < wagon->y + wagon->sizeY))
+            return true;
+    }
 
     if (isSolidTerrain(left, top))
         return true;
@@ -191,6 +209,8 @@ start:
     dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
     u16 *locomotiveGfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles, locomotiveGfx, 8 * 8 * 4 * 2);
+    u16 *railBuilderGfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
+    dmaCopy(wagonsTiles + 8 * 8 * 2, railBuilderGfx, 8 * 8 * 4 * 2);
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -230,6 +250,18 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
+    oamSet(&oamMain, 3,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
+           SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
+           railBuilderGfx,                               // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+
     consoleDemoInit();
 
     printf("Derailed by AzizBgBoss\n");
@@ -259,7 +291,7 @@ start:
         }
     }
 
-    for (int x = 0; x < 5; x++)
+    for (int x = 0; x < 10; x++)
     {
         setWorldObject(x, 5, OBJECT_RAIL);
     }
@@ -273,7 +305,7 @@ start:
     setWorldObject(0, 3, OBJECT_AXE);
     setWorldObject(1, 3, OBJECT_PICKAXE);
 
-    locomotive.x = 0;
+    locomotive.x = 32;
     locomotive.y = 5 * TILE_SIZE;
 
     while (1)
@@ -386,6 +418,59 @@ start:
             }
         }
 
+        int targetWagonX, targetWagonY;
+
+        if (player.direction == DIR_UP)
+        {
+            targetWagonX = (int)player.x + 8;
+            targetWagonY = (int)player.y - 8;
+        }
+        else if (player.direction == DIR_DOWN)
+        {
+            targetWagonX = (int)player.x + 8;
+            targetWagonY = (int)player.y + PLAYER_SIZE + 8;
+        }
+        else if (player.direction == DIR_LEFT)
+        {
+            targetWagonX = (int)player.x - 8;
+            targetWagonY = (int)player.y + 8;
+        }
+        else // DIR_RIGHT
+        {
+            targetWagonX = (int)player.x + PLAYER_SIZE + 8;
+            targetWagonY = (int)player.y + 8;
+        }
+
+        player.selectedWagon = false;
+        for (int i = 0; i < 2; i++)
+        {
+            struct Wagon *wagon = wagons[i];
+            if (targetWagonY >= wagon->y && targetWagonY < wagon->y + wagon->sizeY &&
+                targetWagonX >= wagon->x && targetWagonX < wagon->x + wagon->sizeX)
+            {
+                if (targetWagonX >= wagon->x &&
+                    targetWagonX < wagon->x + wagon->sizeX / 2 &&
+                    wagon->acceptedObjects[0] == player.objectHeld &&
+                    wagon->acceptedObjects[0] != EMPTY &&
+                    wagon->quantity[0] < wagon->maxQuantity)
+                {
+                    player.selectedWagonSlot = 0;
+                    player.selectedWagonId = i;
+                    player.selectedWagon = true;
+                }
+                else if (targetWagonX >= wagon->x + wagon->sizeX / 2 &&
+                         targetWagonX < wagon->x + wagon->sizeX &&
+                         wagon->acceptedObjects[1] == player.objectHeld &&
+                         wagon->acceptedObjects[1] != EMPTY &&
+                         wagon->quantity[1] < wagon->maxQuantity)
+                {
+                    player.selectedWagonSlot = 1;
+                    player.selectedWagonId = i;
+                    player.selectedWagon = true;
+                }
+            }
+        }
+
         // Select object automatically
 
         player.selectedObjectX = (player.x + 8) / TILE_SIZE;
@@ -403,7 +488,7 @@ start:
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
         }
 
-        if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
+        if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY && !player.selectedWagon)
         {
             if (worldObjects[player.selectedObjectX][player.selectedObjectY] == OBJECT_RAIL)
             {
@@ -445,6 +530,27 @@ start:
                         player.objectHeld = temp;
                     }
                 }
+                else if (player.selectedWagon)
+                {
+                    // Put object in wagon
+                    wagons[player.selectedWagonId]->slots[player.selectedWagonSlot] = player.objectHeld;
+                    while (player.quantityHeld > 0 && wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] < wagons[player.selectedWagonId]->maxQuantity)
+                    {
+                        wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot]++;
+                        player.quantityHeld--;
+                    }
+                    player.objectHeld = EMPTY;
+
+                    // I'm so proud of the following part, it too:
+
+                    int id = player.selectedWagonId;
+
+                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[0], railBuilderGfx, 8 * 8 * 2);                     // Top-left quarter
+                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[0] + 8 * 8, railBuilderGfx + 8 * 8 * 2, 8 * 8 * 2); // Bottom-left quarter
+
+                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[1] + 8 * 4, railBuilderGfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
+                    dmaCopy(wagonsTiles + 8 * 8 * 2 + 8 * 8 * 2 * 2 * wagons[id]->quantity[1] + 8 * 12, railBuilderGfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
+                }
                 else
                 {
                     // Place object
@@ -481,14 +587,19 @@ start:
                     player.x++;
             }
         }
+        railBuilder.x = locomotive.x - railBuilder.sizeX;
+        railBuilder.y = locomotive.y;
 
         if (player.selectedObject)
             oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE, player.selectedObjectY * TILE_SIZE);
+        else if (player.selectedWagon)
+            oamSetXY(&oamMain, 1, wagons[player.selectedWagonId]->x + player.selectedWagonSlot * TILE_SIZE, wagons[player.selectedWagonId]->y);
         else
             oamSetXY(&oamMain, 1, -16, -16);
 
         oamSetXY(&oamMain, 0, player.x, player.y);
         oamSetXY(&oamMain, 2, locomotive.x, locomotive.y);
+        oamSetXY(&oamMain, 3, railBuilder.x, railBuilder.y);
 
         oamUpdate(&oamMain);
 
