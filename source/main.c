@@ -6,6 +6,7 @@
 
 #define WORLD_WIDTH 16
 #define WORLD_HEIGHT 12
+#define TILE_SIZE 16
 
 #define TILE_EMPTY 0
 #define TILE_TREE 1
@@ -52,8 +53,7 @@ int main(int argc, char **argv)
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
 
-    bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_256x256, 0, 1);
-
+    bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_512x512, 0, 1);
     dmaCopy(tilemapTiles, bgGetGfxPtr(bg0), tilemapTilesLen);
     dmaCopy(tilemapPal, BG_PALETTE, tilemapPalLen);
 
@@ -73,16 +73,16 @@ int main(int argc, char **argv)
     dmaCopy(spritesPal, SPRITE_PALETTE, spritesPalLen);
 
     oamSet(&oamMain, 0,
-           0, 0, // X, Y
-           0, // Priority
-           0, // Palette index
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
            SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
-           playerGfx,  // Graphics offset
-           -1, // Affine index
-           false, // Double size
-           false, // Hide
-           false, false, // H flip, V flip
-           false); // Mosaic
+           playerGfx,                                    // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
 
     consoleDemoInit();
 
@@ -112,35 +112,48 @@ int main(int argc, char **argv)
     {
         swiWaitForVBlank();
 
-        oamSetXY(&oamMain, 0, player.x, player.y);
-        oamUpdate(&oamMain);
-
         scanKeys();
 
         int held = keysHeld();
         if (held & KEY_START)
             break;
-        
-        if (held & KEY_UP){
+
+        if (held & KEY_UP)
+        {
             player.y--;
             player.direction = DIR_UP;
             dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
         }
-        if (held & KEY_DOWN){
+        if (held & KEY_DOWN)
+        {
             player.y++;
             player.direction = DIR_DOWN;
             dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
         }
-        if (held & KEY_LEFT){
+        if (held & KEY_LEFT)
+        {
             player.x--;
             player.direction = DIR_LEFT;
             dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
         }
-        if (held & KEY_RIGHT){
+        if (held & KEY_RIGHT)
+        {
             player.x++;
             player.direction = DIR_RIGHT;
             dmaCopy(spritesTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4 * 2);
         }
+
+        if (player.x < 0)
+            player.x = 0;
+        if (player.x >= WORLD_WIDTH * TILE_SIZE - TILE_SIZE)
+            player.x = WORLD_WIDTH * TILE_SIZE - TILE_SIZE - 1;
+        if (player.y < 0)
+            player.y = 0;
+        if (player.y >= WORLD_HEIGHT * TILE_SIZE - TILE_SIZE)
+            player.y = WORLD_HEIGHT * TILE_SIZE - TILE_SIZE - 1;
+
+        oamSetXY(&oamMain, 0, player.x, player.y);
+        oamUpdate(&oamMain);
 
         printf("\x1b[3;0H");
         for (int y = 0; y < WORLD_HEIGHT; y++)
