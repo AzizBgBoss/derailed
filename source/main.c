@@ -29,6 +29,10 @@ uint16_t *bg0Map;
 int bg1;
 uint16_t *bg1Map;
 
+int lastPlacedX;
+int lastPlacedY;
+bool justPlaced;
+
 struct Player
 {
     float x;
@@ -281,9 +285,13 @@ start:
         player.selectedObjectX = (player.x + 8) / TILE_SIZE;
         player.selectedObjectY = (player.y + 8) / TILE_SIZE;
 
+        if (player.selectedObjectX != lastPlacedX || player.selectedObjectY != lastPlacedY)
+            justPlaced = false;
+
         // Automatic pickup if same thing held and selected
         if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
-            player.quantityHeld < player.maxQuantityHeld)
+            player.quantityHeld < player.maxQuantityHeld &&
+            justPlaced == false)
         {
             player.quantityHeld++;
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
@@ -321,18 +329,24 @@ start:
         {
             if (player.objectHeld != EMPTY)
             {
-                if (player.selectedObject && player.quantityHeld == 1)
+                if (player.selectedObject)
                 {
-                    // Swap object
-                    int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
-                    setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
-                    player.objectHeld = temp;
+                    if (player.quantityHeld == 1 && player.objectHeld != worldObjects[player.selectedObjectX][player.selectedObjectY])
+                    {
+                        // Swap object
+                        int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
+                        setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
+                        player.objectHeld = temp;
+                    }
                 }
                 else
                 {
                     // Place object
                     setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
                     player.quantityHeld--;
+                    lastPlacedX = player.selectedObjectX;
+                    lastPlacedY = player.selectedObjectY;
+                    justPlaced = true;
                 }
             }
             else if (player.selectedObject)
