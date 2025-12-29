@@ -56,6 +56,10 @@ struct Wagon
     float speed;
 };
 
+struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
+
+struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01};
+
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
 
@@ -104,6 +108,16 @@ bool checkCollision(int newX, int newY)
     int right = (newX + PLAYER_SIZE - 1) / TILE_SIZE;
     int top = newY / TILE_SIZE;
     int bottom = (newY + PLAYER_SIZE - 1) / TILE_SIZE;
+
+    if ((newX >= locomotive.x && newX < locomotive.x + locomotive.sizeX &&
+         newY >= locomotive.y && newY < locomotive.y + locomotive.sizeY) ||
+        (newX + PLAYER_SIZE >= locomotive.x && newX + PLAYER_SIZE < locomotive.x + locomotive.sizeX &&
+         newY >= locomotive.y && newY < locomotive.y + locomotive.sizeY) ||
+        (newX >= locomotive.x && newX < locomotive.x + locomotive.sizeX &&
+         newY + PLAYER_SIZE >= locomotive.y && newY + PLAYER_SIZE < locomotive.y + locomotive.sizeY) ||
+        (newX + PLAYER_SIZE >= locomotive.x && newX + PLAYER_SIZE < locomotive.x + locomotive.sizeX &&
+         newY + PLAYER_SIZE >= locomotive.y && newY + PLAYER_SIZE < locomotive.y + locomotive.sizeY))
+        return true;
 
     if (isSolidTerrain(left, top))
         return true;
@@ -194,10 +208,6 @@ start:
     printf("Derailed by AzizBgBoss\n");
 
     printf("Press START to exit to loader\n");
-
-    struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT * TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
-
-    struct Wagon locomotive = {0, 0, 32, 16, DIR_RIGHT, 0.01};
 
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
@@ -367,7 +377,13 @@ start:
             if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)locomotive.y / TILE_SIZE] != OBJECT_RAIL)
                 goto start;
             else
+            {
                 locomotive.x += locomotive.speed;
+                if (locomotive.x + locomotive.sizeX >= player.x && locomotive.x + locomotive.sizeX < player.x + PLAYER_SIZE &&
+                    ((locomotive.y >= player.y && locomotive.y < player.y + PLAYER_SIZE) ||
+                     (locomotive.y + locomotive.sizeY >= player.y && locomotive.y + locomotive.sizeY < player.y + PLAYER_SIZE))) // The front of the locomotive is colliding with the player
+                    player.x++;
+            }
         }
 
         if (player.selectedObject)
