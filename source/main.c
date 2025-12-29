@@ -9,7 +9,7 @@
 #define SCREEN_WIDTH 256
 #define SCREEN_HEIGHT 192
 
-#define WORLD_WIDTH 32
+#define WORLD_WIDTH 128
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
 #define PLAYER_SIZE 16
@@ -39,7 +39,8 @@ uint16_t *bg1Map;
 
 unsigned int frames = 0;
 
-int scroll = 0;
+int scroll;
+int chunk; // Current chunk loaded (each chunk is 4 tiles wide)
 
 int lastPlacedX;
 int lastPlacedY;
@@ -79,8 +80,8 @@ struct Wagon
 struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
 
 struct Wagon locomotive = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
-struct Wagon railStorage = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
-struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 3, {EMPTY, EMPTY}};
+struct Wagon railStorage = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
+struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY}, {0, 0}, 3, {EMPTY, EMPTY}};
 
 #define WAGONS 3
 
@@ -94,21 +95,29 @@ void bg0SetTile(int x, int y, int tile)
 {
     if (x < 0 || x >= 64 || y < 0 || y >= 32)
         return;
-    if (x < 32) bg0Map[x + y * 32] = tile;
-    else bg0Map[x - 32 + (y + 32) * 32] = tile;
+    if (x < 32)
+        bg0Map[x + y * 32] = tile;
+    else
+        bg0Map[x - 32 + (y + 32) * 32] = tile;
 }
 void bg1SetTile(int x, int y, int tile)
 {
     if (x < 0 || x >= 64 || y < 0 || y >= 32)
         return;
-    if (x < 32) bg1Map[x + y * 32] = tile;
-    else bg1Map[x - 32 + (y + 32) * 32] = tile;
+    if (x < 32)
+        bg1Map[x + y * 32] = tile;
+    else
+        bg1Map[x - 32 + (y + 32) * 32] = tile;
 }
 
 void setWorldTile(int x, int y, int tile)
 {
     worldTerrain[x][y] = tile;
     worldHealth[x][y] = 3;
+
+    if (x < chunk * 4 || x > chunk * 4 + 63)
+        return;
+
     bg0SetTile(x * 2, y * 2, tile * 4);
     bg0SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
     bg0SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
@@ -266,7 +275,7 @@ start:
            0,                                            // Priority
            0,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
-           locomotive.gfx,                                // Graphics offset
+           locomotive.gfx,                               // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -278,7 +287,7 @@ start:
            0,                                            // Priority
            0,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
-           railStorage.gfx,                               // Graphics offset
+           railStorage.gfx,                              // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -290,7 +299,7 @@ start:
            0,                                            // Priority
            0,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
-           railBuilder.gfx,                               // Graphics offset
+           railBuilder.gfx,                              // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -299,9 +308,22 @@ start:
 
     consoleDemoInit();
 
-    printf("Derailed by AzizBgBoss\n");
+    chunk = 0;
 
-    printf("Press START to exit to loader\n");
+    player.x = TILE_SIZE * 4;
+    player.y = WORLD_HEIGHT * TILE_SIZE / 2;
+    player.direction = DIR_DOWN;
+    player.objectHeld = EMPTY;
+    player.quantityHeld = 0;
+
+    for (int i = 0; i < WAGONS; i++)
+    {
+        for (int j = 0; j < 2; j++)
+        {
+            wagons[i]->slots[j] = EMPTY;
+            wagons[i]->quantity[j] = 0;
+        }
+    }
 
     for (int x = 0; x < WORLD_WIDTH / 2; x++)
     {
@@ -324,6 +346,8 @@ start:
         {
             setWorldObject(x, y, EMPTY);
         }
+
+        setWorldObject(x, 5, OBJECT_RAIL);
     }
 
     for (int x = WORLD_WIDTH / 2; x < WORLD_WIDTH; x++)
@@ -347,11 +371,12 @@ start:
         {
             setWorldObject(x, y, EMPTY);
         }
+
+        setWorldObject(x, 5, OBJECT_RAIL);
     }
 
     for (int x = 0; x < WORLD_WIDTH / 2; x++)
     {
-        setWorldObject(x, 5, OBJECT_RAIL);
         setWorldObject(x * 2, 6, OBJECT_WOOD);
         setWorldObject(x * 2 + 1, 7, OBJECT_IRON);
     }
@@ -533,13 +558,14 @@ start:
                     player.selectedWagonSlot = 1;
                     player.selectedWagonId = i;
                     player.selectedWagon = true;
-                } else if (targetWagonX >= wagon->x &&
-                    targetWagonX < wagon->x + wagon->sizeX / 2 &&
-                    player.objectHeld == EMPTY &&
-                    wagon->acceptedObjects[0] == EMPTY &&
-                    wagon->maxQuantity > 0 &&
-                    wagon->quantity[0] > 0 &&
-                    wagon->slots[0] != EMPTY) // slots with no accepted objects but a maximum of objects means its an output slot
+                }
+                else if (targetWagonX >= wagon->x &&
+                         targetWagonX < wagon->x + wagon->sizeX / 2 &&
+                         player.objectHeld == EMPTY &&
+                         wagon->acceptedObjects[0] == EMPTY &&
+                         wagon->maxQuantity > 0 &&
+                         wagon->quantity[0] > 0 &&
+                         wagon->slots[0] != EMPTY) // slots with no accepted objects but a maximum of objects means its an output slot
                 {
                     player.selectedWagonSlot = 0;
                     player.selectedWagonId = i;
@@ -673,18 +699,54 @@ start:
         railBuilder.x = railStorage.x - railBuilder.sizeX;
         railBuilder.y = railStorage.y;
 
-        if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2) scroll = WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2;
-        else if (locomotive.x + locomotive.sizeX >= SCREEN_WIDTH / 2) scroll = locomotive.x + locomotive.sizeX - SCREEN_WIDTH;
-        else scroll = 0;
+        if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2)
+            scroll = WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH;
+        else if (locomotive.x + locomotive.sizeX >= SCREEN_WIDTH / 2)
+            scroll = locomotive.x + locomotive.sizeX - SCREEN_WIDTH / 2;
+        else
+            scroll = 0;
 
-        if (player.selectedObject)
-            oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE - scroll, player.selectedObjectY * TILE_SIZE);
-        else if (player.selectedWagon)
-            oamSetXY(&oamMain, 1, wagons[player.selectedWagonId]->x + player.selectedWagonSlot * TILE_SIZE - scroll, wagons[player.selectedWagonId]->y);
+        // Chunking (btw, player never goes back to left, like Super Mario Bros NES)
+        if ((scroll + SCREEN_WIDTH) / TILE_SIZE >= chunk * 4)
+        {
+            chunk++;
+            if (chunk < WORLD_WIDTH / 4 - 1)
+            {
+                for (int x = chunk * 4; x < chunk * 4 + 4; x++)
+                {
+                    for (int y = 0; y < WORLD_HEIGHT; y++)
+                    {
+                        bg0SetTile((x * 2) % 64, y * 2, worldTerrain[x][y] * 4);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1);
+                        bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3);
+
+                        bg1SetTile((x * 2) % 64, y * 2, worldObjects[x][y] * 4);
+                        bg1SetTile((x * 2) % 64 + 1, y * 2, worldObjects[x][y] * 4 + 1);
+                        bg1SetTile((x * 2) % 64, y * 2 + 1, worldObjects[x][y] * 4 + 2);
+                        bg1SetTile((x * 2) % 64 + 1, y * 2 + 1, worldObjects[x][y] * 4 + 3);
+                    }
+                }
+            }
+        }
+
+        if (player.selectedObjectX >= scroll / TILE_SIZE &&
+            player.selectedObjectX < (scroll + SCREEN_WIDTH) / TILE_SIZE)
+        {
+            if (player.selectedObject)
+                oamSetXY(&oamMain, 1, player.selectedObjectX * TILE_SIZE - scroll, player.selectedObjectY * TILE_SIZE);
+            else if (player.selectedWagon)
+                oamSetXY(&oamMain, 1, wagons[player.selectedWagonId]->x + player.selectedWagonSlot * TILE_SIZE - scroll, wagons[player.selectedWagonId]->y);
+            else
+                oamSetXY(&oamMain, 1, -16, -16);
+        }
         else
             oamSetXY(&oamMain, 1, -16, -16);
 
-        oamSetXY(&oamMain, 0, player.x - scroll, player.y);
+        if (player.x >= scroll - TILE_SIZE && player.x < scroll + SCREEN_WIDTH)
+            oamSetXY(&oamMain, 0, player.x - scroll, player.y);
+        else
+            oamSetXY(&oamMain, 0, -16, -16);
 
         for (int i = 0; i < WAGONS; i++)
         {
@@ -693,7 +755,7 @@ start:
 
         bgSetScroll(bg0, scroll, 0);
         bgSetScroll(bg1, scroll, 0);
-        
+
         bgUpdate();
         oamUpdate(&oamMain);
 
@@ -701,6 +763,7 @@ start:
         printf("x: %f, y: %f, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
         printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
         printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
+        printf("chunk: %d, scroll: %d\n", chunk, scroll);
 
         frames++;
     }
