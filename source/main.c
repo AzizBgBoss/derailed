@@ -490,7 +490,7 @@ generate:
     generateWorld(seed);
 
     locomotive.x = 32;
-    locomotive.y = 5 * TILE_SIZE;
+    locomotive.y = 4.8 * TILE_SIZE;
 
     while (1)
     {
@@ -787,7 +787,7 @@ generate:
         // test for locomotive derailment
         if (locomotive.direction == DIR_RIGHT)
         {
-            if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)locomotive.y / TILE_SIZE] != OBJECT_RAIL)
+            if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
                 goto start;
             else
             {
