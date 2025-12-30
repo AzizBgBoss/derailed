@@ -120,10 +120,11 @@ void setWorldTile(int x, int y, int tile)
 
     if (x >= (chunk - 5) * 4 && x < chunk * 4)
     {
-        bg0SetTile((x * 2) % 64, y * 2, tile * 4);
-        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
-        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
-        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+        int variant = (rand() % 4) * 16 * 4;
+        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + variant);
+        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + variant);
+        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + variant);
+        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + variant);
     }
 }
 
@@ -155,10 +156,11 @@ void setWorldHealth(int x, int y, int health)
     int tile = worldTerrain[x][y] + (3 - health) * 2;
     if (x >= (chunk - 5) * 4 && x < chunk * 4)
     {
-        bg1SetTile((x * 2) % 64, y * 2, tile * 4);
-        bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
-        bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
-        bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+        int variant = (rand() % 4) * 16 * 4;
+        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + variant);
+        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + variant);
+        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + variant);
+        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + variant);
     }
 }
 
@@ -819,10 +821,11 @@ generate:
                 {
                     for (int y = 0; y < WORLD_HEIGHT; y++)
                     {
-                        bg0SetTile((x * 2) % 64, y * 2, worldTerrain[x][y] * 4);
-                        bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1);
-                        bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2);
-                        bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3);
+                        int variant = (rand() % 4) * 16 * 4;
+                        bg0SetTile((x * 2) % 64, y * 2, worldTerrain[x][y] * 4 + variant);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1 + variant);
+                        bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2 + variant);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3 + variant);
 
                         bg1SetTile((x * 2) % 64, y * 2, worldObjects[x][y] * 4);
                         bg1SetTile((x * 2) % 64 + 1, y * 2, worldObjects[x][y] * 4 + 1);
