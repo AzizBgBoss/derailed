@@ -40,6 +40,8 @@
 #define ACTION_SETWORLDTERRAIN 0
 #define ACTION_SETWORLDOBJECT 1
 #define ACTION_SETWORLDHEALTH 2
+#define ACTION_SETWAGONOBJECT 3
+#define ACTION_SETWAGONQUANTITY 4
 
 #define MAX_CLIENTS 7
 #define MAX_UPDATES 16
@@ -179,7 +181,7 @@ void setWorldTile(int x, int y, int tile)
         bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
     }
 
-    if (gameMode == GAMEMODE_HOST)
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
     {
         for (int i = 0; i < MAX_UPDATES; i++)
         {
@@ -190,6 +192,7 @@ void setWorldTile(int x, int y, int tile)
                 updates[i].y = y;
                 updates[i].action = ACTION_SETWORLDTERRAIN;
                 updates[i].parameter = tile;
+                break;
             }
         }
     }
@@ -207,7 +210,7 @@ void setWorldObject(int x, int y, int tile)
         bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
     }
 
-    if (gameMode == GAMEMODE_HOST)
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
     {
         for (int i = 0; i < MAX_UPDATES; i++)
         {
@@ -218,6 +221,7 @@ void setWorldObject(int x, int y, int tile)
                 updates[i].y = y;
                 updates[i].action = ACTION_SETWORLDOBJECT;
                 updates[i].parameter = tile;
+                break;
             }
         }
     }
@@ -244,7 +248,7 @@ void setWorldHealth(int x, int y, int health)
         bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
     }
 
-    if (gameMode == GAMEMODE_HOST)
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
     {
         for (int i = 0; i < MAX_UPDATES; i++)
         {
@@ -255,6 +259,59 @@ void setWorldHealth(int x, int y, int health)
                 updates[i].y = y;
                 updates[i].action = ACTION_SETWORLDHEALTH;
                 updates[i].parameter = health;
+                break;
+            }
+        }
+    }
+}
+
+void updateWagon(int id)
+{
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0], wagons[id]->gfx, 8 * 8 * 2);                      // Top-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 4, wagons[id]->gfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0] + 8 * 8, wagons[id]->gfx + 8 * 8 * 2, 8 * 8 * 2);  // Bottom-left quarter
+    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
+}
+
+void setWagonObject(int wagonId, int slot, int object)
+{
+    wagons[wagonId]->slots[slot] = object;
+    updateWagon(wagonId);
+
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = wagonId;
+                updates[i].y = slot;
+                updates[i].action = ACTION_SETWAGONOBJECT;
+                updates[i].parameter = object;
+                break;
+            }
+        }
+    }
+}
+
+void setWagonQuantity(int wagonId, int slot, int quantity)
+{
+    wagons[wagonId]->quantity[slot] = quantity;
+    updateWagon(wagonId);
+
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = wagonId;
+                updates[i].y = slot;
+                updates[i].action = ACTION_SETWAGONQUANTITY;
+                updates[i].parameter = quantity;
+                break;
             }
         }
     }
@@ -304,14 +361,6 @@ bool checkCollision(int newX, int newY)
     return false;
 }
 
-void updateWagon(int id)
-{
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0], wagons[id]->gfx, 8 * 8 * 2);                      // Top-left quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 4, wagons[id]->gfx + 8 * 8, 8 * 8 * 2);      // Top-right quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[0] + 8 * 8, wagons[id]->gfx + 8 * 8 * 2, 8 * 8 * 2);  // Bottom-left quarter
-    dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
-}
-
 void generateWorld(int seed)
 {
     printf("Generating world with seed %d\n", seed);
@@ -345,7 +394,7 @@ void generateWorld(int seed)
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
         setWorldTile(x, 5, TILE_EMPTY); // Clear a path in the middle
-        if (x < 64)
+        if (x < 8)
         {
             setWorldObject(x, 5, OBJECT_RAIL);
             setWorldTile(x, 6, TILE_EMPTY);
@@ -377,6 +426,12 @@ void generateWorld(int seed)
 
     locomotive.x = 32;
     locomotive.y = 4.8 * TILE_SIZE;
+
+    // Clean up updates cuz the client will generate by himself
+    for (int i = 0; i < MAX_UPDATES; i++)
+    {
+        updates[i].occupied = false;
+    }
 
     printf("World generation complete\n");
 }
@@ -442,6 +497,7 @@ void SendHostStateToClients(void)
             host_packet.update.action = updates[i].action;
             host_packet.update.parameter = updates[i].parameter;
             updates[i].occupied = false;
+            break;
         }
     }
 
@@ -475,15 +531,80 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     {
         switch (packet.update.action)
         {
-            case ACTION_SETWORLDTERRAIN:
-                setWorldTile(packet.update.x, packet.update.y, packet.update.parameter);
-                break;
-            case ACTION_SETWORLDOBJECT:
-                setWorldObject(packet.update.x, packet.update.y, packet.update.parameter);
-                break;
-            case ACTION_SETWORLDHEALTH:
-                setWorldHealth(packet.update.x, packet.update.y, packet.update.parameter);
-                break;
+        case ACTION_SETWORLDTERRAIN:
+        {
+            int x = packet.update.x;
+            int y = packet.update.y;
+            int tile = packet.update.parameter;
+
+            worldTerrain[x][y] = tile;
+            worldHealth[x][y] = 3;
+            worldVariants[x][y] = hash((x << 16) | y, seed) % 4;
+
+            if (x >= (chunk - 5) * 4 && x <= chunk * 4)
+            {
+                bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+                bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+                bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+                bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+            }
+        }
+        break;
+        case ACTION_SETWORLDOBJECT:
+        {
+            int x = packet.update.x;
+            int y = packet.update.y;
+            int tile = packet.update.parameter;
+
+            worldObjects[x][y] = tile;
+
+            if (x >= (chunk - 5) * 4 && x < chunk * 4)
+            {
+                bg1SetTile((x * 2) % 64, y * 2, tile * 4);
+                bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
+                bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
+                bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+            }
+        }
+        break;
+        case ACTION_SETWORLDHEALTH:
+            if (packet.update.parameter > 0)
+            {
+                int x = packet.update.x;
+                int y = packet.update.y;
+                int health = packet.update.parameter;
+
+                worldHealth[x][y] = health;
+                int tile = worldTerrain[x][y] + (3 - health) * 2;
+
+                if (x >= (chunk - 5) * 4 && x < chunk * 4)
+                {
+                    bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+                    bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+                    bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+                    bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+                }
+            }
+            break;
+        case ACTION_SETWAGONOBJECT:
+        {
+            int wagonId = packet.update.x;
+            int slot = packet.update.y;
+            int object = packet.update.parameter;
+
+            wagons[wagonId]->slots[slot] = object;
+            updateWagon(wagonId);
+        }
+        break;
+        case ACTION_SETWAGONQUANTITY:
+        {
+            int wagonId = packet.update.x;
+            int slot = packet.update.y;
+            int quantity = packet.update.parameter;
+
+            wagons[wagonId]->quantity[slot] = quantity;
+            updateWagon(wagonId);
+        }
         }
     }
 
@@ -495,6 +616,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
 typedef struct
 {
     u8 x, y, direction, animationFrame;
+    struct WorldTileUpdate update;
 } pkt_client_to_host;
 
 void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
@@ -516,6 +638,28 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
     players[aid].y = packet.y;
     players[aid].direction = packet.direction;
     players[aid].animationFrame = packet.animationFrame;
+
+    if (packet.update.occupied)
+    {
+        switch (packet.update.action)
+        {
+        case ACTION_SETWORLDTERRAIN:
+            setWorldTile(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        case ACTION_SETWORLDOBJECT:
+            setWorldObject(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        case ACTION_SETWORLDHEALTH:
+            setWorldHealth(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        case ACTION_SETWAGONOBJECT:
+            setWagonObject(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        case ACTION_SETWAGONQUANTITY:
+            setWagonQuantity(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        }
+    }
 
     gamePlayerMask |= BIT(aid);
 }
@@ -556,7 +700,7 @@ bool AccessPointSelectionMenu(void)
         scanKeys();
         uint16_t keys = keysDown();
 
-        if (keys & KEY_B)
+        if (keys & KEY_START)
             return false;
 
         // Get find out how many APs there are in the area
@@ -700,6 +844,8 @@ start:
         Wifi_Deinit();
 
     gameMode = GAMEMODE_SINGLEPLAYER;
+    gameStarted = 0;
+    gamePlayerMask = 0;
 
     videoSetMode(MODE_0_2D);
 
@@ -1051,6 +1197,21 @@ generate:
                 packet.direction = player.direction;
                 packet.animationFrame = player.animationFrame;
 
+                packet.update.occupied = false;
+                for (int i = 0; i < MAX_UPDATES; i++)
+                {
+                    if (updates[i].occupied)
+                    {
+                        packet.update.occupied = updates[i].occupied;
+                        packet.update.x = updates[i].x;
+                        packet.update.y = updates[i].y;
+                        packet.update.action = updates[i].action;
+                        packet.update.parameter = updates[i].parameter;
+                        updates[i].occupied = false;
+                        break;
+                    }
+                }
+
                 Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
             }
         }
@@ -1170,18 +1331,16 @@ generate:
             }
         }
 
-        if (frames % (60 * 3) == 0)
+        if (frames % (60 * 3) == 0 && gameMode != GAMEMODE_CLIENT) // Wassup baby girl? Let me handle it (said the host to the client in an attractive way)
         {
             if (railStorage.quantity[0] && railStorage.quantity[1] && railBuilder.quantity[0] < railBuilder.maxQuantity)
             {
                 // Take one wood and one iron from storage and turn them into a rail through the builder
-                railBuilder.slots[0] = OBJECT_RAIL;
-                railBuilder.quantity[0]++;
-                updateWagon(2);
+                setWagonObject(2, 0, OBJECT_RAIL);
+                setWagonQuantity(2, 0, railBuilder.quantity[0] + 1);
 
-                railStorage.quantity[0]--;
-                railStorage.quantity[1]--;
-                updateWagon(1);
+                setWagonQuantity(1, 0, railStorage.quantity[0] - 1);
+                setWagonQuantity(1, 1, railStorage.quantity[1] - 1);
             }
         }
 
@@ -1314,10 +1473,10 @@ generate:
                 else if (player.selectedWagon)
                 {
                     // Put object in wagon
-                    wagons[player.selectedWagonId]->slots[player.selectedWagonSlot] = player.objectHeld;
+                    setWagonObject(player.selectedWagonId, player.selectedWagonSlot, player.objectHeld);
                     while (player.quantityHeld > 0 && wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] < wagons[player.selectedWagonId]->maxQuantity)
                     {
-                        wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot]++;
+                        setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] + 1);
                         player.quantityHeld--;
                     }
 
@@ -1338,11 +1497,9 @@ generate:
                 player.objectHeld = wagons[player.selectedWagonId]->slots[player.selectedWagonSlot];
                 while (wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] > 0 && player.quantityHeld < player.maxQuantityHeld)
                 {
-                    wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot]--;
+                    setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] - 1);
                     player.quantityHeld++;
                 }
-
-                updateWagon(player.selectedWagonId);
             }
             else if (player.selectedObject)
             {
