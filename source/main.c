@@ -37,7 +37,12 @@
 #define GAMEMODE_HOST 1
 #define GAMEMODE_CLIENT 2
 
+#define ACTION_SETWORLDTERRAIN 0
+#define ACTION_SETWORLDOBJECT 1
+#define ACTION_SETWORLDHEALTH 2
+
 #define MAX_CLIENTS 7
+#define MAX_UPDATES 16
 
 // TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
 // There's also a lot of magic numbers, i need to define them
@@ -62,6 +67,15 @@ int seed;
 int lastPlacedX;
 int lastPlacedY;
 bool justPlaced;
+
+struct WorldTileUpdate
+{
+    bool occupied;
+    uint8_t x;
+    uint8_t y;
+    uint8_t action;
+    uint8_t parameter;
+};
 
 struct Player
 {
@@ -116,6 +130,8 @@ struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY},
 
 struct Wagon *wagons[WAGONS] = {&locomotive, &railStorage, &railBuilder};
 
+struct WorldTileUpdate updates[MAX_UPDATES];
+
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldVariants[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
@@ -140,7 +156,7 @@ void bg1SetTile(int x, int y, int tile)
         bg1Map[x - 32 + (y + 32) * 32] = tile;
 }
 
-void delay(int seconds)
+void delay(float seconds)
 {
     int start = time(NULL);
     while (time(NULL) - start < seconds)
@@ -153,7 +169,7 @@ void setWorldTile(int x, int y, int tile)
 {
     worldTerrain[x][y] = tile;
     worldHealth[x][y] = 3;
-    worldVariants[x][y] = rand() % 4;
+    worldVariants[x][y] = hash((x << 16) | y, seed) % 4;
 
     if (x >= (chunk - 5) * 4 && x <= chunk * 4)
     {
@@ -161,6 +177,21 @@ void setWorldTile(int x, int y, int tile)
         bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
         bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
         bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+    }
+
+    if (gameMode == GAMEMODE_HOST)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = x;
+                updates[i].y = y;
+                updates[i].action = ACTION_SETWORLDTERRAIN;
+                updates[i].parameter = tile;
+            }
+        }
     }
 }
 
@@ -174,6 +205,21 @@ void setWorldObject(int x, int y, int tile)
         bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
         bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
         bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+    }
+
+    if (gameMode == GAMEMODE_HOST)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = x;
+                updates[i].y = y;
+                updates[i].action = ACTION_SETWORLDOBJECT;
+                updates[i].parameter = tile;
+            }
+        }
     }
 }
 
@@ -196,6 +242,21 @@ void setWorldHealth(int x, int y, int health)
         bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
         bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
         bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+    }
+
+    if (gameMode == GAMEMODE_HOST)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = x;
+                updates[i].y = y;
+                updates[i].action = ACTION_SETWORLDHEALTH;
+                updates[i].parameter = health;
+            }
+        }
     }
 }
 
@@ -341,6 +402,7 @@ typedef struct
     int seed;
     uint8_t player_mask;
     struct Player player[MAX_CLIENTS + 1];
+    struct WorldTileUpdate update;
 } pkt_host_to_client;
 
 void SendHostStateToClients(void)
@@ -369,7 +431,65 @@ void SendHostStateToClients(void)
         }
     }
 
+    host_packet.update.occupied = false;
+    for (int i = 0; i < MAX_UPDATES; i++)
+    {
+        if (updates[i].occupied)
+        {
+            host_packet.update.occupied = updates[i].occupied;
+            host_packet.update.x = updates[i].x;
+            host_packet.update.y = updates[i].y;
+            host_packet.update.action = updates[i].action;
+            host_packet.update.parameter = updates[i].parameter;
+            updates[i].occupied = false;
+        }
+    }
+
     Wifi_MultiplayerHostCmdTxFrame(&host_packet, sizeof(host_packet));
+}
+
+void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
+{
+    if (len < sizeof(pkt_host_to_client))
+    {
+        // TODO: This shouldn't have happened!
+        return;
+    }
+
+    if (type != WIFI_MPTYPE_CMD)
+        return;
+
+    // Save information received from the client into the global state struct
+    pkt_host_to_client packet;
+    Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
+
+    for (int i = 0; i < MAX_CLIENTS; i++)
+    {
+        players[i].x = packet.player[i].x;
+        players[i].y = packet.player[i].y;
+        players[i].direction = packet.player[i].direction;
+        players[i].animationFrame = packet.player[i].animationFrame;
+    }
+
+    if (packet.update.occupied)
+    {
+        switch (packet.update.action)
+        {
+            case ACTION_SETWORLDTERRAIN:
+                setWorldTile(packet.update.x, packet.update.y, packet.update.parameter);
+                break;
+            case ACTION_SETWORLDOBJECT:
+                setWorldObject(packet.update.x, packet.update.y, packet.update.parameter);
+                break;
+            case ACTION_SETWORLDHEALTH:
+                setWorldHealth(packet.update.x, packet.update.y, packet.update.parameter);
+                break;
+        }
+    }
+
+    seed = packet.seed;
+    gamePlayerMask = packet.player_mask;
+    gameStarted = packet.has_started;
 }
 
 typedef struct
@@ -398,34 +518,6 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
     players[aid].animationFrame = packet.animationFrame;
 
     gamePlayerMask |= BIT(aid);
-}
-
-void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
-{
-    if (len < sizeof(pkt_host_to_client))
-    {
-        // TODO: This shouldn't have happened!
-        return;
-    }
-
-    if (type != WIFI_MPTYPE_CMD)
-        return;
-
-    // Save information received from the client into the global state struct
-    pkt_host_to_client packet;
-    Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
-
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        players[i].x = packet.player[i].x;
-        players[i].y = packet.player[i].y;
-        players[i].direction = packet.player[i].direction;
-        players[i].animationFrame = packet.player[i].animationFrame;
-    }
-
-    seed = packet.seed;
-    gamePlayerMask = packet.player_mask;
-    gameStarted = packet.has_started;
 }
 
 void initHostMode()
@@ -555,7 +647,7 @@ bool initClientMode()
     printf("\x1b[2J");
 
     printf("Connecting to AP\n");
-    printf("Press B to cancel\n");
+    printf("Press START to cancel\n");
     printf("\n");
 
     // Wait until we're connected
@@ -566,7 +658,7 @@ bool initClientMode()
         swiWaitForVBlank();
 
         scanKeys();
-        if (keysDown() & KEY_B)
+        if (keysDown() & KEY_START)
             return false;
 
         int status = Wifi_AssocStatus();
@@ -851,11 +943,14 @@ start:
 
                     printf("\x1b[2J");
                     printf("Hosting on channel 6\n");
-                    if (Wifi_MultiplayerGetNumClients() > 0) printf("Press A to start the game\n");
+                    if (Wifi_MultiplayerGetNumClients() > 0)
+                        printf("Press A to start the game\n");
                     printf("\n");
 
                     if ((keys_down & KEY_A) && Wifi_MultiplayerGetNumClients() > 0)
                         break;
+                    if ((keys_down & KEY_START))
+                        goto start;
 
                     int num_clients = Wifi_MultiplayerGetNumClients();
                     u16 players_mask = Wifi_MultiplayerGetClientMask();

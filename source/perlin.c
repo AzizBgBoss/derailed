@@ -46,7 +46,7 @@ uint32_t murmur3_32(const uint8_t *key, size_t len, uint32_t seed)
 }
 
 // Hash function for Perlin noise
-int hash(int x, int seed)
+int hash(uint32_t x, int seed)
 {
 	// Use MurmurHash3 to generate a hash value based on the input x and seed
 	uint32_t hashValue = murmur3_32((const uint8_t *)&x, sizeof(x), seed);
