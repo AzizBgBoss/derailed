@@ -91,6 +91,7 @@ struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY},
 struct Wagon *wagons[WAGONS] = {&locomotive, &railStorage, &railBuilder};
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
+uint8_t worldVariants[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldObjects[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldHealth[WORLD_WIDTH][WORLD_HEIGHT];
 
@@ -117,14 +118,14 @@ void setWorldTile(int x, int y, int tile)
 {
     worldTerrain[x][y] = tile;
     worldHealth[x][y] = 3;
+    worldVariants[x][y] = rand() % 4;
 
     if (x >= (chunk - 5) * 4 && x < chunk * 4)
     {
-        int variant = (rand() % 4) * 16 * 4;
-        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + variant);
-        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + variant);
-        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + variant);
-        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + variant);
+        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
     }
 }
 
@@ -156,11 +157,10 @@ void setWorldHealth(int x, int y, int health)
     int tile = worldTerrain[x][y] + (3 - health) * 2;
     if (x >= (chunk - 5) * 4 && x < chunk * 4)
     {
-        int variant = (rand() % 4) * 16 * 4;
-        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + variant);
-        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + variant);
-        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + variant);
-        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + variant);
+        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
     }
 }
 
@@ -821,12 +821,10 @@ generate:
                 {
                     for (int y = 0; y < WORLD_HEIGHT; y++)
                     {
-                        int variant = (rand() % 4) * 16 * 4;
-                        bg0SetTile((x * 2) % 64, y * 2, worldTerrain[x][y] * 4 + variant);
-                        bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1 + variant);
-                        bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2 + variant);
-                        bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3 + variant);
-
+                        bg0SetTile((x * 2) % 64, y * 2, worldTerrain[x][y] * 4 + worldVariants[x][y] * 16 * 4);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1 + worldVariants[x][y] * 16 * 4);
+                        bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2 + worldVariants[x][y] * 16 * 4);
+                        bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3 + worldVariants[x][y] * 16 * 4);
                         bg1SetTile((x * 2) % 64, y * 2, worldObjects[x][y] * 4);
                         bg1SetTile((x * 2) % 64 + 1, y * 2, worldObjects[x][y] * 4 + 1);
                         bg1SetTile((x * 2) % 64, y * 2 + 1, worldObjects[x][y] * 4 + 2);
