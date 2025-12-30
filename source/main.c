@@ -27,10 +27,10 @@
 #define OBJECT_AXE 11
 #define OBJECT_PICKAXE 12
 
-#define DIR_UP 0
-#define DIR_DOWN 1
-#define DIR_LEFT 2
-#define DIR_RIGHT 3
+#define DIR_DOWN 0
+#define DIR_LEFT 1
+#define DIR_RIGHT 2
+#define DIR_UP 3
 
 // TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
 // There's also a lot of magic numbers, i need to define them
@@ -63,6 +63,7 @@ struct Player
     int selectedWagonId;
     int selectedWagonSlot;
     bool selectedWagon;
+    int animationFrame;
 };
 
 struct Wagon
@@ -80,7 +81,7 @@ struct Wagon
     int acceptedObjects[2];
 };
 
-struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, 0, 0, 3, 0, 0, false};
+struct Player player = {WORLD_WIDTH * TILE_SIZE / 2, WORLD_HEIGHT *TILE_SIZE / 2, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0};
 
 struct Wagon locomotive = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
 struct Wagon railStorage = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
@@ -120,7 +121,7 @@ void setWorldTile(int x, int y, int tile)
     worldHealth[x][y] = 3;
     worldVariants[x][y] = rand() % 4;
 
-    if (x >= (chunk - 5) * 4 && x < chunk * 4)
+    if (x >= (chunk - 5) * 4 && x <= chunk * 4)
     {
         bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
         bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
@@ -249,7 +250,7 @@ void generateWorld(int seed)
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
         setWorldTile(x, 5, TILE_EMPTY); // Clear a path in the middle
-        if (x < 8)
+        if (x < 64)
         {
             setWorldObject(x, 5, OBJECT_RAIL);
             setWorldTile(x, 6, TILE_EMPTY);
@@ -394,7 +395,7 @@ start:
         scanKeys();
 
         printf("\x1b[2J");
-        for (int i = 0; i < 2; i++)
+        for (int i = 0; i < 3; i++)
         {
             if (i == selection)
                 printf("\x1b[%d;0H> ", i);
@@ -408,6 +409,9 @@ start:
             case 1:
                 printf("Random Seed\n");
                 break;
+            case 2:
+                printf("Exit Game\n");
+                break;
             }
         }
 
@@ -415,12 +419,12 @@ start:
         {
             selection--;
             if (selection < 0)
-                selection = 1;
+                selection = 2;
         }
         if (keysDown() & KEY_DOWN)
         {
             selection++;
-            if (selection > 1)
+            if (selection > 2)
                 selection = 0;
         }
         if (keysDown() & KEY_A)
@@ -477,11 +481,13 @@ start:
                     }
                 }
             }
-            else
+            else if (selection == 1)
             {
                 seed = rand() % 0xFFFFFFFF;
                 goto generate;
             }
+            else
+                return 0;
         }
     }
 
@@ -501,35 +507,44 @@ generate:
         int held = keysHeld();
         int down = keysDown();
         if (held & KEY_START)
-            break;
+            goto start;
 
         int newX = player.x;
         int newY = player.y;
+
+        if (frames % 10 == 0)
+            player.animationFrame = (player.animationFrame + 1) % 4;
 
         if (held & KEY_UP)
         {
             newY--;
             player.direction = DIR_UP;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, playerGfx, 8 * 8 * 4);
         }
-        if (held & KEY_DOWN)
+        else if (held & KEY_DOWN)
         {
             newY++;
             player.direction = DIR_DOWN;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, playerGfx, 8 * 8 * 4);
         }
         if (held & KEY_LEFT)
         {
             newX--;
             player.direction = DIR_LEFT;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, playerGfx, 8 * 8 * 4);
         }
-        if (held & KEY_RIGHT)
+        else if (held & KEY_RIGHT)
         {
             newX++;
             player.direction = DIR_RIGHT;
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, playerGfx, 8 * 8 * 4);
+        }
+        else
+        {
+            player.animationFrame = 0;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, playerGfx, 8 * 8 * 4);
         }
+
         if (!checkCollision(newX, player.y))
             player.x = newX;
 
@@ -600,7 +615,10 @@ generate:
                     }
                 }
             }
+        }
 
+        if (frames % (60 * 3) == 0)
+        {
             if (railStorage.quantity[0] && railStorage.quantity[1] && railBuilder.quantity[0] < railBuilder.maxQuantity)
             {
                 // Take one wood and one iron from storage and turn them into a rail through the builder
@@ -691,7 +709,8 @@ generate:
         if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
             player.quantityHeld < player.maxQuantityHeld &&
             justPlaced == false &&
-            worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY)
+            worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY &&
+            worldObjects[player.selectedObjectX][player.selectedObjectY] != OBJECT_RAIL) // Don't include rails for now to avoid unintentional pick up in the main railway
         {
             player.quantityHeld++;
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
@@ -811,7 +830,7 @@ generate:
         else
             scroll = 0;
 
-        // Chunking (btw, player never goes back to left, like Super Mario Bros NES)
+        // Chunking (btw, player never goes back to left)
         if ((scroll + SCREEN_WIDTH) / TILE_SIZE >= chunk * 4)
         {
             chunk++;
@@ -825,6 +844,7 @@ generate:
                         bg0SetTile((x * 2) % 64 + 1, y * 2, worldTerrain[x][y] * 4 + 1 + worldVariants[x][y] * 16 * 4);
                         bg0SetTile((x * 2) % 64, y * 2 + 1, worldTerrain[x][y] * 4 + 2 + worldVariants[x][y] * 16 * 4);
                         bg0SetTile((x * 2) % 64 + 1, y * 2 + 1, worldTerrain[x][y] * 4 + 3 + worldVariants[x][y] * 16 * 4);
+
                         bg1SetTile((x * 2) % 64, y * 2, worldObjects[x][y] * 4);
                         bg1SetTile((x * 2) % 64 + 1, y * 2, worldObjects[x][y] * 4 + 1);
                         bg1SetTile((x * 2) % 64, y * 2 + 1, worldObjects[x][y] * 4 + 2);
