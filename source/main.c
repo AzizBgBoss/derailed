@@ -57,6 +57,7 @@ static Wifi_AccessPoint AccessPoint;
 
 int scroll;
 int chunk; // Current chunk loaded (each chunk is 4 tiles wide)
+int seed;
 
 int lastPlacedX;
 int lastPlacedY;
@@ -97,8 +98,7 @@ struct Wagon
 
 struct Player player = {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0};
 
-struct Player players[MAX_CLIENTS + 1] = {
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
+struct Player players[MAX_CLIENTS] = {
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
@@ -338,8 +338,9 @@ bool initLocalWifi()
 typedef struct
 {
     uint8_t has_started;
+    int seed;
     uint8_t player_mask;
-    struct Player player[WIFI_MAX_MULTIPLAYER_CLIENTS + 1];
+    struct Player player[MAX_CLIENTS + 1];
 } pkt_host_to_client;
 
 void SendHostStateToClients(void)
@@ -347,19 +348,24 @@ void SendHostStateToClients(void)
     pkt_host_to_client host_packet;
 
     host_packet.has_started = gameStarted;
+    host_packet.seed = seed;
     host_packet.player_mask = gamePlayerMask;
 
-    for (int i = 0; i < MAX_CLIENTS + 1; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
         if (gamePlayerMask & BIT(i))
         {
             host_packet.player[i].x = player.x;
             host_packet.player[i].y = player.y;
+            host_packet.player[i].direction = player.direction;
+            host_packet.player[i].animationFrame = player.animationFrame;
         }
         else
         {
             host_packet.player[i].x = BIT(i);
             host_packet.player[i].y = BIT(i);
+            host_packet.player[i].direction = DIR_DOWN;
+            host_packet.player[i].animationFrame = 0;
         }
     }
 
@@ -368,7 +374,7 @@ void SendHostStateToClients(void)
 
 typedef struct
 {
-    u8 x, y;
+    u8 x, y, direction, animationFrame;
 } pkt_client_to_host;
 
 void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
@@ -388,6 +394,8 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
 
     players[aid].x = packet.x;
     players[aid].y = packet.y;
+    players[aid].direction = packet.direction;
+    players[aid].animationFrame = packet.animationFrame;
 
     gamePlayerMask |= BIT(aid);
 }
@@ -407,12 +415,15 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     pkt_host_to_client packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
 
-    for (int i = 0; i < MAX_CLIENTS + 1; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
         players[i].x = packet.player[i].x;
         players[i].y = packet.player[i].y;
+        players[i].direction = packet.player[i].direction;
+        players[i].animationFrame = packet.player[i].animationFrame;
     }
 
+    seed = packet.seed;
     gamePlayerMask = packet.player_mask;
     gameStarted = packet.has_started;
 }
@@ -697,7 +708,7 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
-    for (int i = 0; i < MAX_CLIENTS + 1; i++)
+    for (int i = 0; i < MAX_CLIENTS; i++)
     {
         players[i].gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
         dmaCopy(playerTiles, players[i].gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
@@ -718,7 +729,6 @@ start:
     consoleDemoInit();
 
     int selection = 0;
-    int seed;
     while (1)
     {
         swiWaitForVBlank();
@@ -841,10 +851,10 @@ start:
 
                     printf("\x1b[2J");
                     printf("Hosting on channel 6\n");
-                    printf("A: Start game\n");
+                    if (Wifi_MultiplayerGetNumClients() > 0) printf("Press A to start the game\n");
                     printf("\n");
 
-                    if (keys_down & KEY_A)
+                    if ((keys_down & KEY_A) && Wifi_MultiplayerGetNumClients() > 0)
                         break;
 
                     int num_clients = Wifi_MultiplayerGetNumClients();
@@ -911,7 +921,6 @@ start:
                 printf("Game started!\n");
                 delay(1);
 
-                seed = rand() % 0xFFFFFFFF;
                 goto generate;
             }
             else // Exit Game
@@ -935,23 +944,17 @@ generate:
                 {
                     printf("All clients disconnected! Returning to main menu...\n");
                     delay(2);
-                    Wifi_IdleMode();
                     goto start;
                 }
                 SendHostStateToClients();
             }
             else if (gameMode == GAMEMODE_CLIENT)
             {
-                if (Wifi_AssocStatus() != ASSOCSTATUS_ASSOCIATED)
-                {
-                    printf("Disconnected from host! Returning to main menu...\n");
-                    delay(2);
-                    Wifi_IdleMode();
-                    goto start;
-                }
                 pkt_client_to_host packet;
                 packet.x = player.x;
                 packet.y = player.y;
+                packet.direction = player.direction;
+                packet.animationFrame = player.animationFrame;
 
                 Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
             }
@@ -974,26 +977,22 @@ generate:
         {
             newY--;
             player.direction = DIR_UP;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
         }
         else if (held & KEY_DOWN)
         {
             newY++;
             player.direction = DIR_DOWN;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
         }
 
         if (held & KEY_LEFT)
         {
             newX--;
             player.direction = DIR_LEFT;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
         }
         else if (held & KEY_RIGHT)
         {
             newX++;
             player.direction = DIR_RIGHT;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
         }
 
         if (!(held & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)))
@@ -1001,6 +1000,8 @@ generate:
             player.animationFrame = 0;
             dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, player.gfx, 8 * 8 * 4);
         }
+        else
+            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
 
         if (!checkCollision(newX, player.y))
             player.x = newX;
@@ -1336,15 +1337,20 @@ generate:
 
         if (gameMode != GAMEMODE_SINGLEPLAYER)
         {
-            for (int i = 0; i < MAX_CLIENTS + 1; i++)
+            for (int i = 0; i < MAX_CLIENTS; i++)
             {
                 if (gamePlayerMask & BIT(i))
                 {
                     if (players[i].x >= scroll - TILE_SIZE && players[i].x < scroll + SCREEN_WIDTH)
+                    {
                         oamSetXY(&oamMain, 5 + i, players[i].x - scroll, players[i].y);
+                        dmaCopy(playerTiles + 8 * 8 * 4 * players[i].direction + 8 * 8 * players[i].animationFrame, players[i].gfx, 8 * 8 * 4);
+                    }
                     else
                         oamSetXY(&oamMain, 5 + i, -16, -16);
                 }
+                else
+                    oamSetXY(&oamMain, 5 + i, -16, -16);
             }
         }
 
@@ -1361,8 +1367,9 @@ generate:
         printf("chunk: %d, scroll: %d\n", chunk, scroll);
         for (int i = 0; i < 8; i++)
         {
-            if (gameMode != GAMEMODE_SINGLEPLAYER)
-                printf("Player %d - x: %f, y: %f\n", i + 1, players[i].x, players[i].y);
+            if (gamePlayerMask & BIT(i))
+                if (gameMode != GAMEMODE_SINGLEPLAYER)
+                    printf("Player %d - x: %f, y: %f\n", i + 1, players[i].x, players[i].y);
         }
         if (gameMode == GAMEMODE_HOST)
         {
