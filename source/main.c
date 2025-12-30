@@ -37,7 +37,7 @@
 #define GAMEMODE_HOST 1
 #define GAMEMODE_CLIENT 2
 
-#define MAX_PLAYERS WIFI_MAX_MULTIPLAYER_CLIENTS + 1
+#define MAX_CLIENTS 7
 
 // TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
 // There's also a lot of magic numbers, i need to define them
@@ -97,7 +97,7 @@ struct Wagon
 
 struct Player player = {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0};
 
-struct Player players[MAX_PLAYERS] = {
+struct Player players[MAX_CLIENTS + 1] = {
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
     {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
@@ -320,10 +320,9 @@ void generateWorld(int seed)
     printf("World generation complete\n");
 }
 
-bool wifi = false;
 bool initLocalWifi()
 {
-    if (wifi)
+    if (Wifi_CheckInit())
         return true;
     printf("Initializing WiFi...\n");
     if (!Wifi_InitDefault(INIT_ONLY | WIFI_LOCAL_ONLY))
@@ -332,7 +331,6 @@ bool initLocalWifi()
         delay(2);
         return false;
     }
-    wifi = true;
     printf("WiFi initialized!\n");
     return true;
 }
@@ -351,17 +349,17 @@ void SendHostStateToClients(void)
     host_packet.has_started = gameStarted;
     host_packet.player_mask = gamePlayerMask;
 
-    for (int i = 0; i < WIFI_MAX_MULTIPLAYER_CLIENTS + 1; i++)
+    for (int i = 0; i < MAX_CLIENTS + 1; i++)
     {
         if (gamePlayerMask & BIT(i))
         {
-            host_packet.player[i].x = players[i].x;
-            host_packet.player[i].y = players[i].y;
+            host_packet.player[i].x = player.x;
+            host_packet.player[i].y = player.y;
         }
         else
         {
-            host_packet.player[i].x = 255;
-            host_packet.player[i].y = 255;
+            host_packet.player[i].x = BIT(i);
+            host_packet.player[i].y = BIT(i);
         }
     }
 
@@ -409,7 +407,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     pkt_host_to_client packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
 
-    for (int i = 0; i < WIFI_MAX_MULTIPLAYER_CLIENTS + 1; i++)
+    for (int i = 0; i < MAX_CLIENTS + 1; i++)
     {
         players[i].x = packet.player[i].x;
         players[i].y = packet.player[i].y;
@@ -421,7 +419,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
 
 void initHostMode()
 {
-    Wifi_MultiplayerHostMode(7, sizeof(pkt_host_to_client),
+    Wifi_MultiplayerHostMode(MAX_CLIENTS, sizeof(pkt_host_to_client),
                              sizeof(pkt_client_to_host));
     Wifi_MultiplayerFromClientSetPacketHandler(FromClientPacketHandler);
 
@@ -595,8 +593,8 @@ int main(int argc, char **argv)
 {
     srand(time(NULL));
 start:
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-        Wifi_IdleMode();
+    if (Wifi_CheckInit())
+        Wifi_Deinit();
 
     gameMode = GAMEMODE_SINGLEPLAYER;
 
@@ -699,7 +697,7 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
-    for (int i = 0; i < MAX_PLAYERS; i++)
+    for (int i = 0; i < MAX_CLIENTS + 1; i++)
     {
         players[i].gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
         dmaCopy(playerTiles, players[i].gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
@@ -884,13 +882,11 @@ start:
 
                 if (!AccessPointSelectionMenu())
                 {
-                    Wifi_IdleMode();
                     goto start;
                 }
 
                 if (!initClientMode())
                 {
-                    Wifi_IdleMode();
                     goto start;
                 }
 
@@ -907,7 +903,6 @@ start:
                     u16 keys_down = keysDown();
                     if (keys_down & KEY_START)
                     {
-                        Wifi_IdleMode();
                         goto start;
                     }
                 }
@@ -932,14 +927,28 @@ generate:
     {
         swiWaitForVBlank();
 
-        if (frames % 120 == 0)
+        if (frames)
         {
             if (gameMode == GAMEMODE_HOST)
             {
+                if (Wifi_MultiplayerGetNumClients() == 0)
+                {
+                    printf("All clients disconnected! Returning to main menu...\n");
+                    delay(2);
+                    Wifi_IdleMode();
+                    goto start;
+                }
                 SendHostStateToClients();
             }
             else if (gameMode == GAMEMODE_CLIENT)
             {
+                if (Wifi_AssocStatus() != ASSOCSTATUS_ASSOCIATED)
+                {
+                    printf("Disconnected from host! Returning to main menu...\n");
+                    delay(2);
+                    Wifi_IdleMode();
+                    goto start;
+                }
                 pkt_client_to_host packet;
                 packet.x = player.x;
                 packet.y = player.y;
@@ -1327,12 +1336,15 @@ generate:
 
         if (gameMode != GAMEMODE_SINGLEPLAYER)
         {
-            for (int i = 0; i < MAX_PLAYERS; i++)
+            for (int i = 0; i < MAX_CLIENTS + 1; i++)
             {
-                if (players[i].x >= scroll - TILE_SIZE && players[i].x < scroll + SCREEN_WIDTH)
-                    oamSetXY(&oamMain, 5 + i, players[i].x - scroll, players[i].y);
-                else
-                    oamSetXY(&oamMain, 5 + i, -16, -16);
+                if (gamePlayerMask & BIT(i))
+                {
+                    if (players[i].x >= scroll - TILE_SIZE && players[i].x < scroll + SCREEN_WIDTH)
+                        oamSetXY(&oamMain, 5 + i, players[i].x - scroll, players[i].y);
+                    else
+                        oamSetXY(&oamMain, 5 + i, -16, -16);
+                }
             }
         }
 
@@ -1347,11 +1359,15 @@ generate:
         printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
         printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
         printf("chunk: %d, scroll: %d\n", chunk, scroll);
+        for (int i = 0; i < 8; i++)
+        {
+            if (gameMode != GAMEMODE_SINGLEPLAYER)
+                printf("Player %d - x: %f, y: %f\n", i + 1, players[i].x, players[i].y);
+        }
         if (gameMode == GAMEMODE_HOST)
         {
             int num_clients = Wifi_MultiplayerGetNumClients();
-            u16 players_mask = Wifi_MultiplayerGetClientMask();
-            printf("Num clients: %d (mask 0x%02X)\n", num_clients, players_mask);
+            printf("Num clients: %d (mask 0x%02X)\n", num_clients, gamePlayerMask);
             printf("\n");
         }
 
