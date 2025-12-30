@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <nds.h>
+#include <time.h>
+
+#include "perlin.h"
 
 #include "tilemap.h"
 #include "player.h"
@@ -115,22 +118,26 @@ void setWorldTile(int x, int y, int tile)
     worldTerrain[x][y] = tile;
     worldHealth[x][y] = 3;
 
-    if (x < chunk * 4 || x > chunk * 4 + 63)
-        return;
-
-    bg0SetTile(x * 2, y * 2, tile * 4);
-    bg0SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
-    bg0SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
-    bg0SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
+    if (x >= (chunk - 5) * 4 && x < chunk * 4)
+    {
+        bg0SetTile((x * 2) % 64, y * 2, tile * 4);
+        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
+        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
+        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+    }
 }
 
 void setWorldObject(int x, int y, int tile)
 {
     worldObjects[x][y] = tile;
-    bg1SetTile(x * 2, y * 2, tile * 4);
-    bg1SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
-    bg1SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
-    bg1SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
+
+    if (x >= (chunk - 5) * 4 && x < chunk * 4)
+    {
+        bg1SetTile((x * 2) % 64, y * 2, tile * 4);
+        bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
+        bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
+        bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+    }
 }
 
 void setWorldHealth(int x, int y, int health)
@@ -146,10 +153,13 @@ void setWorldHealth(int x, int y, int health)
         return;
     }
     int tile = worldTerrain[x][y] + (3 - health) * 2;
-    bg1SetTile(x * 2, y * 2, tile * 4);
-    bg1SetTile(x * 2 + 1, y * 2, tile * 4 + 1);
-    bg1SetTile(x * 2, y * 2 + 1, tile * 4 + 2);
-    bg1SetTile(x * 2 + 1, y * 2 + 1, tile * 4 + 3);
+    if (x >= (chunk - 5) * 4 && x < chunk * 4)
+    {
+        bg1SetTile((x * 2) % 64, y * 2, tile * 4);
+        bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
+        bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
+        bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+    }
 }
 
 static inline bool isSolidTerrain(int tx, int ty)
@@ -204,9 +214,58 @@ void updateWagon(int id)
     dmaCopy(wagonsTiles + 8 * 8 * 2 * id + 8 * 8 * 2 * WAGONS * wagons[id]->quantity[1] + 8 * 12, wagons[id]->gfx + 8 * 8 * 3, 8 * 8 * 2); // Bottom-right quarter
 }
 
+void generateWorld(int seed)
+{
+    printf("Generating world with seed %d\n", seed);
+    for (int x = 0; x < WORLD_WIDTH; x++)
+    {
+        for (int y = 0; y < WORLD_HEIGHT; y++)
+        {
+            setWorldTile(x, y, TILE_EMPTY);
+            setWorldObject(x, y, EMPTY);
+        }
+    }
+    for (int x = 0; x < WORLD_WIDTH; x++)
+    {
+        for (int y = 0; y < WORLD_HEIGHT; y++)
+        {
+            float noiseValue = fractalPerlin2D(x * 0.1f, y * 0.1f, 4, 0.5f, 1.0f, seed);
+            if (noiseValue < -0.2f)
+            {
+                setWorldTile(x, y, TILE_ROCK);
+            }
+            else if (noiseValue < 0.2f)
+            {
+                setWorldTile(x, y, TILE_EMPTY);
+            }
+            else
+            {
+                setWorldTile(x, y, TILE_TREE);
+            }
+        }
+    }
+    for (int x = 0; x < WORLD_WIDTH; x++)
+    {
+        setWorldTile(x, 5, TILE_EMPTY); // Clear a path in the middle
+        if (x < 8)
+        {
+            setWorldObject(x, 5, OBJECT_RAIL);
+            setWorldTile(x, 6, TILE_EMPTY);
+        }
+    }
+    setWorldObject(0, 6, OBJECT_WOOD);
+    setWorldObject(1, 6, OBJECT_WOOD);
+    setWorldObject(2, 6, OBJECT_IRON);
+    setWorldObject(3, 6, OBJECT_IRON);
+    setWorldObject(4, 6, OBJECT_AXE);
+    setWorldObject(5, 6, OBJECT_PICKAXE);
+    printf("World generation complete\n");
+}
+
 int main(int argc, char **argv)
 {
 start:
+    srand(time(NULL));
     videoSetMode(MODE_0_2D);
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
@@ -308,10 +367,10 @@ start:
 
     consoleDemoInit();
 
-    chunk = 0;
+    chunk = -1;
 
     player.x = TILE_SIZE * 4;
-    player.y = WORLD_HEIGHT * TILE_SIZE / 2;
+    player.y = TILE_SIZE * 6;
     player.direction = DIR_DOWN;
     player.objectHeld = EMPTY;
     player.quantityHeld = 0;
@@ -325,64 +384,108 @@ start:
         }
     }
 
-    for (int x = 0; x < WORLD_WIDTH / 2; x++)
+    int selection = 0;
+    int seed;
+    while (1)
     {
-        for (int y = 0; y < 3; y++)
+        swiWaitForVBlank();
+        scanKeys();
+
+        printf("\x1b[2J");
+        for (int i = 0; i < 2; i++)
         {
-            setWorldTile(x, y, TILE_TREE);
+            if (i == selection)
+                printf("\x1b[%d;0H> ", i);
+            else
+                printf("\x1b[%d;0H  ", i);
+            switch (i)
+            {
+            case 0:
+                printf("Choose Seed\n");
+                break;
+            case 1:
+                printf("Random Seed\n");
+                break;
+            }
         }
 
-        for (int y = 3; y < WORLD_HEIGHT - 3; y++)
+        if (keysDown() & KEY_UP)
         {
-            setWorldTile(x, y, TILE_EMPTY);
+            selection--;
+            if (selection < 0)
+                selection = 1;
         }
-
-        for (int y = WORLD_HEIGHT - 3; y < WORLD_HEIGHT; y++)
+        if (keysDown() & KEY_DOWN)
         {
-            setWorldTile(x, y, TILE_ROCK);
+            selection++;
+            if (selection > 1)
+                selection = 0;
         }
-
-        for (int y = 0; y < WORLD_HEIGHT; y++)
+        if (keysDown() & KEY_A)
         {
-            setWorldObject(x, y, EMPTY);
-        }
+            if (selection == 0)
+            {
+                printf("\x1b[4;0HEnter Seed:\nUse arrow keys to change digits, A to confirm\n");
+                seed = 0;
+                while (1)
+                {
+                    swiWaitForVBlank();
+                    scanKeys();
+                    printf("\x1b[8;0H");
+                    for (int j = 7; j >= 0; j--)
+                    {
+                        printf("%X", (seed >> (j * 4)) & 0xF);
+                    }
+                    printf("\n");
+                    for (int j = 0; j < 8; j++)
+                    {
+                        if (j == selection)
+                            printf("^");
+                        else
+                            printf(" ");
+                    }
+                    if (keysDown() & KEY_LEFT)
+                    {
+                        selection--;
+                        if (selection < 0)
+                            selection = 7;
+                    }
+                    else if (keysDown() & KEY_RIGHT)
+                    {
+                        selection++;
+                        if (selection > 7)
+                            selection = 0;
+                    }
+                    else if (keysDown() & (KEY_UP | KEY_DOWN))
+                    {
+                        int shift = (7 - selection) * 4;
+                        int digit = (seed >> shift) & 0xF;
 
-        setWorldObject(x, 5, OBJECT_RAIL);
+                        if (keysDown() & KEY_UP)
+                            digit = (digit + 1) & 0xF;
+                        else
+                            digit = (digit - 1) & 0xF;
+
+                        seed &= ~(0xF << shift);
+                        seed |= (digit << shift);
+                    }
+                    else if (keysDown() & KEY_A)
+                    {
+                        goto generate;
+                    }
+                }
+            }
+            else
+            {
+                seed = rand() % 0xFFFFFFFF;
+                goto generate;
+            }
+        }
     }
 
-    for (int x = WORLD_WIDTH / 2; x < WORLD_WIDTH; x++)
-    {
-        for (int y = 0; y < 3; y++)
-        {
-            setWorldTile(x, y, TILE_ROCK);
-        }
+generate:
 
-        for (int y = 3; y < WORLD_HEIGHT - 3; y++)
-        {
-            setWorldTile(x, y, TILE_EMPTY);
-        }
-
-        for (int y = WORLD_HEIGHT - 3; y < WORLD_HEIGHT; y++)
-        {
-            setWorldTile(x, y, TILE_TREE);
-        }
-
-        for (int y = 0; y < WORLD_HEIGHT; y++)
-        {
-            setWorldObject(x, y, EMPTY);
-        }
-
-        setWorldObject(x, 5, OBJECT_RAIL);
-    }
-
-    for (int x = 0; x < WORLD_WIDTH / 2; x++)
-    {
-        setWorldObject(x * 2, 6, OBJECT_WOOD);
-        setWorldObject(x * 2 + 1, 7, OBJECT_IRON);
-    }
-
-    setWorldObject(0, 3, OBJECT_AXE);
-    setWorldObject(1, 3, OBJECT_PICKAXE);
+    generateWorld(seed);
 
     locomotive.x = 32;
     locomotive.y = 5 * TILE_SIZE;
