@@ -42,6 +42,8 @@
 #define ACTION_SETWORLDHEALTH 2
 #define ACTION_SETWAGONOBJECT 3
 #define ACTION_SETWAGONQUANTITY 4
+#define ACTION_SETPLAYEROBJECTHELD 5
+#define ACTION_SETPLAYERQUANTITY 6
 
 #define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
@@ -72,7 +74,7 @@ bool justPlaced;
 
 bool interact;
 
-struct WorldTileUpdate
+struct Update
 {
     bool occupied;
     uint8_t x;
@@ -126,7 +128,7 @@ struct Wagon railBuilder = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY},
 
 struct Wagon *wagons[WAGONS] = {&locomotive, &railStorage, &railBuilder};
 
-struct WorldTileUpdate updates[MAX_UPDATES];
+struct Update updates[MAX_UPDATES];
 
 uint8_t worldTerrain[WORLD_WIDTH][WORLD_HEIGHT];
 uint8_t worldVariants[WORLD_WIDTH][WORLD_HEIGHT];
@@ -326,6 +328,56 @@ void setWagonQuantity(int wagonId, int slot, int quantity)
     }
 }
 
+void setPlayerObjectHeld(int object)
+{
+    if (gameMode != GAMEMODE_CLIENT)
+    {
+        player.objectHeld = object;
+    }
+
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = 0;
+                updates[i].y = 0;
+                updates[i].action = ACTION_SETPLAYEROBJECTHELD;
+                updates[i].parameter = object;
+                break;
+            }
+        }
+    }
+}
+
+void setPlayerQuantity(int quantity)
+{
+    if (gameMode != GAMEMODE_CLIENT)
+    {
+        player.quantityHeld = quantity;
+        if (player.quantityHeld == 0)
+            player.objectHeld = EMPTY;
+    }
+
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].x = 0;
+                updates[i].y = 0;
+                updates[i].action = ACTION_SETPLAYERQUANTITY;
+                updates[i].parameter = quantity;
+                break;
+            }
+        }
+    }
+}
+
 static inline bool isSolidTerrain(int tx, int ty)
 {
     if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT)
@@ -469,8 +521,9 @@ typedef struct
     uint8_t has_started;
     int seed;
     uint8_t player_mask;
-    struct Player player;
-    struct WorldTileUpdate update;
+    struct Player playerHost;
+    struct Player playerClient;
+    struct Update update;
 } pkt_host_to_client;
 
 void SendHostStateToClients(void)
@@ -481,10 +534,13 @@ void SendHostStateToClients(void)
     host_packet.seed = seed;
     host_packet.player_mask = gamePlayerMask;
 
-    host_packet.player.x = player.x;
-    host_packet.player.y = player.y;
-    host_packet.player.direction = player.direction;
-    host_packet.player.animationFrame = player.animationFrame;
+    host_packet.playerHost.x = player.x;
+    host_packet.playerHost.y = player.y;
+    host_packet.playerHost.direction = player.direction;
+    host_packet.playerHost.animationFrame = player.animationFrame;
+
+    host_packet.playerClient.objectHeld = player2.objectHeld;
+    host_packet.playerClient.quantityHeld = player2.quantityHeld;
 
     host_packet.update.occupied = false;
     for (int i = 0; i < MAX_UPDATES; i++)
@@ -519,10 +575,13 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     pkt_host_to_client packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
 
-    player2.x = packet.player.x;
-    player2.y = packet.player.y;
-    player2.direction = packet.player.direction;
-    player2.animationFrame = packet.player.animationFrame;
+    player2.x = packet.playerHost.x;
+    player2.y = packet.playerHost.y;
+    player2.direction = packet.playerHost.direction;
+    player2.animationFrame = packet.playerHost.animationFrame;
+
+    player.objectHeld = packet.playerClient.objectHeld;
+    player.quantityHeld = packet.playerClient.quantityHeld;
 
     if (packet.update.occupied)
     {
@@ -614,7 +673,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
 typedef struct
 {
     u8 x, y, direction, animationFrame;
-    struct WorldTileUpdate update;
+    struct Update update;
 } pkt_client_to_host;
 
 void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
@@ -655,6 +714,18 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
             break;
         case ACTION_SETWAGONQUANTITY:
             setWagonQuantity(packet.update.x, packet.update.y, packet.update.parameter);
+            break;
+        case ACTION_SETPLAYEROBJECTHELD:
+            {
+                player2.objectHeld = packet.update.parameter;
+            }
+            break;
+        case ACTION_SETPLAYERQUANTITY:
+            {
+                player2.quantityHeld = packet.update.parameter;
+                if (player2.quantityHeld == 0)
+                    player2.objectHeld = EMPTY;
+            }
             break;
         }
     }
@@ -1425,7 +1496,7 @@ generate:
             worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY &&
             worldObjects[player.selectedObjectX][player.selectedObjectY] != OBJECT_RAIL) // Don't include rails for now to avoid unintentional pick up in the main railway
         {
-            player.quantityHeld++;
+            setPlayerQuantity(player.quantityHeld + 1);
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
             if (gameMode == GAMEMODE_CLIENT)
                 interact = false;
@@ -1470,7 +1541,7 @@ generate:
                         // Swap object
                         int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
                         setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
-                        player.objectHeld = temp;
+                        setPlayerObjectHeld(temp);
                         if (gameMode == GAMEMODE_CLIENT)
                             interact = false;
                     }
@@ -1479,10 +1550,10 @@ generate:
                 {
                     // Put object in wagon
                     setWagonObject(player.selectedWagonId, player.selectedWagonSlot, player.objectHeld);
-                    while (player.quantityHeld > 0 && wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] < wagons[player.selectedWagonId]->maxQuantity)
+                    if (player.quantityHeld > 0 && wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] < wagons[player.selectedWagonId]->maxQuantity)
                     {
                         setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] + 1);
-                        player.quantityHeld--;
+                        setPlayerQuantity(player.quantityHeld - 1);
                     }
 
                     updateWagon(player.selectedWagonId);
@@ -1493,7 +1564,7 @@ generate:
                 {
                     // Place object
                     setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
-                    player.quantityHeld--;
+                    setPlayerQuantity(player.quantityHeld - 1);
                     lastPlacedX = player.selectedObjectX;
                     lastPlacedY = player.selectedObjectY;
                     justPlaced = true;
@@ -1503,11 +1574,11 @@ generate:
             }
             else if (player.selectedWagon) // Playing is selecting an output wagon
             {
-                player.objectHeld = wagons[player.selectedWagonId]->slots[player.selectedWagonSlot];
-                while (wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] > 0 && player.quantityHeld < player.maxQuantityHeld)
+                setPlayerObjectHeld(wagons[player.selectedWagonId]->slots[player.selectedWagonSlot]);
+                if (wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] > 0 && player.quantityHeld < player.maxQuantityHeld)
                 {
                     setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] - 1);
-                    player.quantityHeld++;
+                    setPlayerQuantity(player.quantityHeld + 1);
                 }
                 if (gameMode == GAMEMODE_CLIENT)
                     interact = false;
@@ -1515,19 +1586,16 @@ generate:
             else if (player.selectedObject)
             {
                 // Pick up object
-                player.objectHeld = worldObjects[player.selectedObjectX][player.selectedObjectY];
+                setPlayerObjectHeld(worldObjects[player.selectedObjectX][player.selectedObjectY]);
                 setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
-                player.quantityHeld = 1;
+                setPlayerQuantity(1);
                 justPlaced = true;
                 lastPlacedX = player.selectedObjectX;
                 lastPlacedY = player.selectedObjectY;
                 if (gameMode == GAMEMODE_CLIENT)
                     interact = false;
             }
-        }  
-
-        if (player.quantityHeld == 0)
-            player.objectHeld = EMPTY;
+        }
 
         // test for locomotive derailment
         if (locomotive.direction == DIR_RIGHT)
