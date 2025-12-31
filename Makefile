@@ -2,6 +2,9 @@
 #
 # SPDX-FileContributor: Antonio Niño Díaz, 2024-2025
 
+COMMIT_HASH := $(shell git describe --always --dirty)
+CFLAGS += -DCOMMIT_HASH=\"$(COMMIT_HASH)\"
+
 BLOCKSDS	?= /opt/blocksds/core
 
 # User config

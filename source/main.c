@@ -43,7 +43,7 @@
 #define ACTION_SETWAGONOBJECT 3
 #define ACTION_SETWAGONQUANTITY 4
 
-#define MAX_CLIENTS 7
+#define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
 
 // TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
@@ -69,6 +69,8 @@ int seed;
 int lastPlacedX;
 int lastPlacedY;
 bool justPlaced;
+
+bool interact;
 
 struct WorldTileUpdate
 {
@@ -114,15 +116,7 @@ struct Wagon
 
 struct Player player = {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0};
 
-struct Player players[MAX_CLIENTS] = {
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-    {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0},
-};
+struct Player player2;
 
 struct Wagon locomotive = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.01f, {EMPTY, EMPTY}, {0, 0}, 0, {EMPTY, EMPTY}};
 struct Wagon railStorage = {NULL, 0, 0, 32, 16, DIR_RIGHT, 0.0f, {EMPTY, EMPTY}, {0, 0}, 3, {OBJECT_IRON, OBJECT_WOOD}};
@@ -169,16 +163,19 @@ void delay(float seconds)
 
 void setWorldTile(int x, int y, int tile)
 {
-    worldTerrain[x][y] = tile;
-    worldHealth[x][y] = 3;
-    worldVariants[x][y] = hash((x << 16) | y, seed) % 4;
-
-    if (x >= (chunk - 5) * 4 && x <= chunk * 4)
+    if (gameMode != GAMEMODE_CLIENT)
     {
-        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+        worldTerrain[x][y] = tile;
+        worldHealth[x][y] = 3;
+        worldVariants[x][y] = hash((x << 16) | y, seed) % 4;
+
+        if (x >= (chunk - 5) * 4 && x <= chunk * 4)
+        {
+            bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+        }
     }
 
     if (gameMode != GAMEMODE_SINGLEPLAYER)
@@ -200,14 +197,17 @@ void setWorldTile(int x, int y, int tile)
 
 void setWorldObject(int x, int y, int tile)
 {
-    worldObjects[x][y] = tile;
-
-    if (x >= (chunk - 5) * 4 && x < chunk * 4)
+    if (gameMode != GAMEMODE_CLIENT)
     {
-        bg1SetTile((x * 2) % 64, y * 2, tile * 4);
-        bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
-        bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
-        bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+        worldObjects[x][y] = tile;
+
+        if (x >= (chunk - 5) * 4 && x < chunk * 4)
+        {
+            bg1SetTile((x * 2) % 64, y * 2, tile * 4);
+            bg1SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1);
+            bg1SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2);
+            bg1SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3);
+        }
     }
 
     if (gameMode != GAMEMODE_SINGLEPLAYER)
@@ -229,23 +229,26 @@ void setWorldObject(int x, int y, int tile)
 
 void setWorldHealth(int x, int y, int health)
 {
-    worldHealth[x][y] = health;
-    if (worldHealth[x][y] == 0)
+    if (gameMode != GAMEMODE_CLIENT)
     {
-        if (worldTerrain[x][y] == TILE_TREE)
-            setWorldObject(x, y, OBJECT_WOOD);
-        else if (worldTerrain[x][y] == TILE_ROCK)
-            setWorldObject(x, y, OBJECT_IRON);
-        setWorldTile(x, y, TILE_EMPTY);
-        return;
-    }
-    int tile = worldTerrain[x][y] + (3 - health) * 2;
-    if (x >= (chunk - 5) * 4 && x < chunk * 4)
-    {
-        bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
-        bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+        worldHealth[x][y] = health;
+        if (worldHealth[x][y] == 0)
+        {
+            if (worldTerrain[x][y] == TILE_TREE)
+                setWorldObject(x, y, OBJECT_WOOD);
+            else if (worldTerrain[x][y] == TILE_ROCK)
+                setWorldObject(x, y, OBJECT_IRON);
+            setWorldTile(x, y, TILE_EMPTY);
+            return;
+        }
+        int tile = worldTerrain[x][y] + (3 - health) * 2;
+        if (x >= (chunk - 5) * 4 && x < chunk * 4)
+        {
+            bg0SetTile((x * 2) % 64, y * 2, tile * 4 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2 + 1) % 64, y * 2, tile * 4 + 1 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
+            bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
+        }
     }
 
     if (gameMode != GAMEMODE_SINGLEPLAYER)
@@ -275,9 +278,12 @@ void updateWagon(int id)
 
 void setWagonObject(int wagonId, int slot, int object)
 {
-    wagons[wagonId]->slots[slot] = object;
-    updateWagon(wagonId);
 
+    if (gameMode != GAMEMODE_CLIENT)
+    {
+        wagons[wagonId]->slots[slot] = object;
+        updateWagon(wagonId);
+    }
     if (gameMode != GAMEMODE_SINGLEPLAYER)
     {
         for (int i = 0; i < MAX_UPDATES; i++)
@@ -297,8 +303,11 @@ void setWagonObject(int wagonId, int slot, int object)
 
 void setWagonQuantity(int wagonId, int slot, int quantity)
 {
-    wagons[wagonId]->quantity[slot] = quantity;
-    updateWagon(wagonId);
+    if (gameMode != GAMEMODE_CLIENT)
+    {
+        wagons[wagonId]->quantity[slot] = quantity;
+        updateWagon(wagonId);
+    }
 
     if (gameMode != GAMEMODE_SINGLEPLAYER)
     {
@@ -363,6 +372,8 @@ bool checkCollision(int newX, int newY)
 
 void generateWorld(int seed)
 {
+    uint8_t temp = gameMode;
+    gameMode = GAMEMODE_SINGLEPLAYER; // Temporarily disable networking during world generation
     printf("Generating world with seed %d\n", seed);
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
@@ -433,6 +444,8 @@ void generateWorld(int seed)
         updates[i].occupied = false;
     }
 
+    gameMode = temp;
+
     printf("World generation complete\n");
 }
 
@@ -456,7 +469,7 @@ typedef struct
     uint8_t has_started;
     int seed;
     uint8_t player_mask;
-    struct Player player[MAX_CLIENTS + 1];
+    struct Player player;
     struct WorldTileUpdate update;
 } pkt_host_to_client;
 
@@ -468,23 +481,10 @@ void SendHostStateToClients(void)
     host_packet.seed = seed;
     host_packet.player_mask = gamePlayerMask;
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        if (gamePlayerMask & BIT(i))
-        {
-            host_packet.player[i].x = player.x;
-            host_packet.player[i].y = player.y;
-            host_packet.player[i].direction = player.direction;
-            host_packet.player[i].animationFrame = player.animationFrame;
-        }
-        else
-        {
-            host_packet.player[i].x = BIT(i);
-            host_packet.player[i].y = BIT(i);
-            host_packet.player[i].direction = DIR_DOWN;
-            host_packet.player[i].animationFrame = 0;
-        }
-    }
+    host_packet.player.x = player.x;
+    host_packet.player.y = player.y;
+    host_packet.player.direction = player.direction;
+    host_packet.player.animationFrame = player.animationFrame;
 
     host_packet.update.occupied = false;
     for (int i = 0; i < MAX_UPDATES; i++)
@@ -519,13 +519,10 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     pkt_host_to_client packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        players[i].x = packet.player[i].x;
-        players[i].y = packet.player[i].y;
-        players[i].direction = packet.player[i].direction;
-        players[i].animationFrame = packet.player[i].animationFrame;
-    }
+    player2.x = packet.player.x;
+    player2.y = packet.player.y;
+    player2.direction = packet.player.direction;
+    player2.animationFrame = packet.player.animationFrame;
 
     if (packet.update.occupied)
     {
@@ -605,6 +602,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
             wagons[wagonId]->quantity[slot] = quantity;
             updateWagon(wagonId);
         }
+        break;
         }
     }
 
@@ -634,10 +632,10 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
     pkt_client_to_host packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
 
-    players[aid].x = packet.x;
-    players[aid].y = packet.y;
-    players[aid].direction = packet.direction;
-    players[aid].animationFrame = packet.animationFrame;
+    player2.x = packet.x;
+    player2.y = packet.y;
+    player2.direction = packet.direction;
+    player2.animationFrame = packet.animationFrame;
 
     if (packet.update.occupied)
     {
@@ -841,8 +839,11 @@ int main(int argc, char **argv)
     srand(time(NULL));
 start:
     if (Wifi_CheckInit())
+    {
+        if (Wifi_AssocStatus() == ASSOCSTATUS_ASSOCIATED)
+            Wifi_DisconnectAP();
         Wifi_Deinit();
-
+    }
     gameMode = GAMEMODE_SINGLEPLAYER;
     gameStarted = 0;
     gamePlayerMask = 0;
@@ -883,6 +884,8 @@ start:
     dmaCopy(wagonsTiles + 8 * 8 * 2, railStorage.gfx, 8 * 8 * 4 * 2);
     railBuilder.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles + 8 * 8 * 2 * 2, railBuilder.gfx, 8 * 8 * 4 * 2);
+    player2.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
+    dmaCopy(playerTiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -946,23 +949,17 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        players[i].gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-        dmaCopy(playerTiles, players[i].gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
-
-        oamSet(&oamMain, 5 + i,
-               0, 0,                                         // X, Y
-               0,                                            // Priority
-               0,                                            // Palette index
-               SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
-               players[i].gfx,                               // Graphics offset
-               -1,                                           // Affine index
-               false,                                        // Double size
-               false,                                        // Hide
-               false, false,                                 // H flip, V flip
-               false);                                       // Mosaic
-    }
+    oamSet(&oamMain, 5,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           0,                                            // Palette index
+           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           player2.gfx,                                  // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
 
     consoleDemoInit();
 
@@ -998,6 +995,7 @@ start:
                 break;
             }
         }
+        printf("\x1b[24;0HCommit: %s", COMMIT_HASH);
 
         if (keysDown() & KEY_UP)
         {
@@ -1172,48 +1170,50 @@ start:
 generate:
 
     generateWorld(seed);
+    interact = true;
 
     while (1)
     {
         swiWaitForVBlank();
 
-        if (frames)
+        if (gameMode == GAMEMODE_HOST)
         {
-            if (gameMode == GAMEMODE_HOST)
+            if (Wifi_MultiplayerGetNumClients() == 0)
             {
-                if (Wifi_MultiplayerGetNumClients() == 0)
-                {
-                    printf("All clients disconnected! Returning to main menu...\n");
-                    delay(2);
-                    goto start;
-                }
-                SendHostStateToClients();
+                printf("All clients disconnected! Returning to main menu...\n");
+                delay(2);
+                goto start;
             }
-            else if (gameMode == GAMEMODE_CLIENT)
+            SendHostStateToClients();
+        }
+        else if (gameMode == GAMEMODE_CLIENT)
+        {
+            pkt_client_to_host packet;
+            packet.x = player.x;
+            packet.y = player.y;
+            packet.direction = player.direction;
+            packet.animationFrame = player.animationFrame;
+
+            packet.update.occupied = false;
+            for (int i = 0; i < MAX_UPDATES; i++)
             {
-                pkt_client_to_host packet;
-                packet.x = player.x;
-                packet.y = player.y;
-                packet.direction = player.direction;
-                packet.animationFrame = player.animationFrame;
-
-                packet.update.occupied = false;
-                for (int i = 0; i < MAX_UPDATES; i++)
+                if (updates[i].occupied)
                 {
-                    if (updates[i].occupied)
-                    {
-                        packet.update.occupied = updates[i].occupied;
-                        packet.update.x = updates[i].x;
-                        packet.update.y = updates[i].y;
-                        packet.update.action = updates[i].action;
-                        packet.update.parameter = updates[i].parameter;
-                        updates[i].occupied = false;
-                        break;
-                    }
+                    packet.update.occupied = updates[i].occupied;
+                    packet.update.x = updates[i].x;
+                    packet.update.y = updates[i].y;
+                    packet.update.action = updates[i].action;
+                    packet.update.parameter = updates[i].parameter;
+                    updates[i].occupied = false;
+                    break;
                 }
-
-                Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
+                if (i == MAX_UPDATES - 1) // If last update and not occupied, we can proceed
+                {
+                    interact = true;
+                }
             }
+
+            Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
         }
 
         scanKeys();
@@ -1418,7 +1418,8 @@ generate:
             justPlaced = false;
 
         // Automatic pickup if same thing held and selected
-        if (player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
+        if (interact &&
+            player.objectHeld == worldObjects[player.selectedObjectX][player.selectedObjectY] &&
             player.quantityHeld < player.maxQuantityHeld &&
             justPlaced == false &&
             worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY &&
@@ -1426,6 +1427,8 @@ generate:
         {
             player.quantityHeld++;
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+            if (gameMode == GAMEMODE_CLIENT)
+                interact = false;
         }
 
         if (worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY && !player.selectedWagon)
@@ -1456,7 +1459,7 @@ generate:
             player.selectedObject = false;
         }
 
-        if (down & KEY_A)
+        if (down & KEY_A && interact)
         {
             if (player.objectHeld != EMPTY)
             {
@@ -1468,6 +1471,8 @@ generate:
                         int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
                         setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
                         player.objectHeld = temp;
+                        if (gameMode == GAMEMODE_CLIENT)
+                            interact = false;
                     }
                 }
                 else if (player.selectedWagon)
@@ -1481,6 +1486,8 @@ generate:
                     }
 
                     updateWagon(player.selectedWagonId);
+                    if (gameMode == GAMEMODE_CLIENT)
+                        interact = false;
                 }
                 else
                 {
@@ -1490,6 +1497,8 @@ generate:
                     lastPlacedX = player.selectedObjectX;
                     lastPlacedY = player.selectedObjectY;
                     justPlaced = true;
+                    if (gameMode == GAMEMODE_CLIENT)
+                        interact = false;
                 }
             }
             else if (player.selectedWagon) // Playing is selecting an output wagon
@@ -1500,6 +1509,8 @@ generate:
                     setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] - 1);
                     player.quantityHeld++;
                 }
+                if (gameMode == GAMEMODE_CLIENT)
+                    interact = false;
             }
             else if (player.selectedObject)
             {
@@ -1507,8 +1518,13 @@ generate:
                 player.objectHeld = worldObjects[player.selectedObjectX][player.selectedObjectY];
                 setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
                 player.quantityHeld = 1;
+                justPlaced = true;
+                lastPlacedX = player.selectedObjectX;
+                lastPlacedY = player.selectedObjectY;
+                if (gameMode == GAMEMODE_CLIENT)
+                    interact = false;
             }
-        }
+        }  
 
         if (player.quantityHeld == 0)
             player.objectHeld = EMPTY;
@@ -1517,7 +1533,11 @@ generate:
         if (locomotive.direction == DIR_RIGHT)
         {
             if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
+            {
+                printf("You lost :(\n");
+                delay(2);
                 goto start;
+            }
             else
             {
                 locomotive.x += locomotive.speed;
@@ -1589,22 +1609,21 @@ generate:
 
         if (gameMode != GAMEMODE_SINGLEPLAYER)
         {
-            for (int i = 0; i < MAX_CLIENTS; i++)
+            if (gamePlayerMask & BIT(1))
             {
-                if (gamePlayerMask & BIT(i))
+                if (player2.x >= scroll - TILE_SIZE && player2.x < scroll + SCREEN_WIDTH)
                 {
-                    if (players[i].x >= scroll - TILE_SIZE && players[i].x < scroll + SCREEN_WIDTH)
-                    {
-                        oamSetXY(&oamMain, 5 + i, players[i].x - scroll, players[i].y);
-                        dmaCopy(playerTiles + 8 * 8 * 4 * players[i].direction + 8 * 8 * players[i].animationFrame, players[i].gfx, 8 * 8 * 4);
-                    }
-                    else
-                        oamSetXY(&oamMain, 5 + i, -16, -16);
+                    oamSetXY(&oamMain, 5, player2.x - scroll, player2.y);
+                    dmaCopy(playerTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                 }
                 else
-                    oamSetXY(&oamMain, 5 + i, -16, -16);
+                    oamSetXY(&oamMain, 5, -16, -16);
             }
+            else
+                oamSetXY(&oamMain, 5, -16, -16);
         }
+        else
+            oamSetXY(&oamMain, 5, -16, -16);
 
         bgSetScroll(bg0, scroll, 0);
         bgSetScroll(bg1, scroll, 0);
@@ -1617,12 +1636,12 @@ generate:
         printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
         printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
         printf("chunk: %d, scroll: %d\n", chunk, scroll);
-        for (int i = 0; i < 8; i++)
-        {
-            if (gamePlayerMask & BIT(i))
-                if (gameMode != GAMEMODE_SINGLEPLAYER)
-                    printf("Player %d - x: %f, y: %f\n", i + 1, players[i].x, players[i].y);
-        }
+        printf("interact: %d\n", interact);
+
+        if (gamePlayerMask & BIT(1))
+            if (gameMode != GAMEMODE_SINGLEPLAYER)
+                printf("Player %d - x: %f, y: %f\n", 2, player2.x, player2.y);
+
         if (gameMode == GAMEMODE_HOST)
         {
             int num_clients = Wifi_MultiplayerGetNumClients();
