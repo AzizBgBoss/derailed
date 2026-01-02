@@ -1582,6 +1582,15 @@ generate:
                         if (gameMode == GAMEMODE_CLIENT)
                             interact = false;
                     }
+                    else if (worldObjects[player.selectedObjectX][player.selectedObjectY] == player.objectHeld &&
+                             player.quantityHeld < player.maxQuantityHeld)
+                    {
+                        // Stack object
+                        setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+                        setPlayerQuantity(player.quantityHeld + 1);
+                        if (gameMode == GAMEMODE_CLIENT)
+                            interact = false;
+                    }
                 }
                 else if (player.selectedWagon)
                 {
@@ -1602,7 +1611,7 @@ generate:
                     if (gameMode == GAMEMODE_CLIENT)
                         interact = false;
                 }
-                else
+                else if (worldObjects[player.selectedObjectX][player.selectedObjectY] == EMPTY)
                 {
                     // Place object
                     setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
