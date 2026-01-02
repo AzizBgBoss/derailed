@@ -581,7 +581,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
         }
     }
 
-    if (packet.update.occupied && packet.update.id != lastReceivedId)
+    if (packet.update.occupied && packet.update.id != lastReceivedId && !doneUpdate)
     {
         doneUpdate = true;
         lastReceivedId = packet.update.id;
@@ -750,7 +750,7 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
         }
     }
 
-    if (packet.update.occupied && packet.update.id != lastReceivedId)
+    if (packet.update.occupied && packet.update.id != lastReceivedId && !doneUpdate)
     {
         doneUpdate = true;
         lastReceivedId = packet.update.id;
@@ -1794,6 +1794,13 @@ generate:
                 {
                     printf("Player %d - x: %f, y: %f\n", 2, player2.x, player2.y);
                     printf("lastId: %d, doneUpdate: %d, lastRId: %d\n", lastId, doneUpdate, lastReceivedId);
+                    printf("Updates:\n");
+                    for (int i = 0; i < MAX_UPDATES; i++)
+                    {
+                        printf("\x1b[15;%dH%d", i * 2, updates[i].occupied);
+                        printf("\x1b[16;%dH%x", i * 2, updates[i].id);
+                    }
+                    printf("\n");
                 }
 
             if (gameMode == GAMEMODE_HOST)
