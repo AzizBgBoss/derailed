@@ -64,6 +64,8 @@ int gameMode = GAMEMODE_SINGLEPLAYER;
 uint8_t gameStarted = 0;
 uint8_t gamePlayerMask = 0;
 uint8_t lastId = 0;
+bool doneUpdate = false;
+uint8_t lastReceivedId = 255;
 
 static Wifi_AccessPoint AccessPoint;
 
@@ -493,6 +495,8 @@ typedef struct
     uint8_t has_started;
     int seed;
     uint8_t player_mask;
+    bool doneUpdate;
+    uint8_t lastReceivedId;
     struct Player playerHost;
     struct Player playerClient;
     struct Update update;
@@ -514,6 +518,17 @@ void SendHostStateToClients(void)
     host_packet.playerClient.objectHeld = player2.objectHeld;
     host_packet.playerClient.quantityHeld = player2.quantityHeld;
 
+    if (doneUpdate)
+    {
+        host_packet.doneUpdate = true;
+        doneUpdate = false;
+        host_packet.lastReceivedId = lastReceivedId;
+    }
+    else
+    {
+        host_packet.doneUpdate = false;
+    }
+
     host_packet.update.occupied = false;
     for (int i = 0; i < MAX_UPDATES; i++)
     {
@@ -524,7 +539,7 @@ void SendHostStateToClients(void)
             host_packet.update.y = updates[i].y;
             host_packet.update.action = updates[i].action;
             host_packet.update.parameter = updates[i].parameter;
-            updates[i].occupied = false;
+            host_packet.update.id = updates[i].id;
             break;
         }
     }
@@ -555,8 +570,21 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     player.objectHeld = packet.playerClient.objectHeld;
     player.quantityHeld = packet.playerClient.quantityHeld;
 
-    if (packet.update.occupied)
+    if (packet.doneUpdate)
     {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (updates[i].occupied && updates[i].id == packet.lastReceivedId)
+            {
+                updates[i].occupied = false;
+            }
+        }
+    }
+
+    if (packet.update.occupied && packet.update.id != lastReceivedId)
+    {
+        doneUpdate = true;
+        lastReceivedId = packet.update.id;
         switch (packet.update.action)
         {
         case ACTION_SETWORLDTERRAIN:
@@ -645,6 +673,8 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
 typedef struct
 {
     u8 x, y, direction, animationFrame;
+    bool doneUpdate;
+    u8 lastReceivedId;
     struct Update update;
 } pkt_client_to_host;
 
@@ -656,6 +686,17 @@ void SendClientStateToHost(void)
     packet.direction = player.direction;
     packet.animationFrame = player.animationFrame;
 
+    if (doneUpdate)
+    {
+        packet.doneUpdate = true;
+        doneUpdate = false;
+        packet.lastReceivedId = lastReceivedId;
+    }
+    else
+    {
+        packet.doneUpdate = false;
+    }
+
     packet.update.occupied = false;
     for (int i = 0; i < MAX_UPDATES; i++)
     {
@@ -666,7 +707,7 @@ void SendClientStateToHost(void)
             packet.update.y = updates[i].y;
             packet.update.action = updates[i].action;
             packet.update.parameter = updates[i].parameter;
-            updates[i].occupied = false;
+            packet.update.id = updates[i].id;
             break;
         }
         if (i == MAX_UPDATES - 1) // If last update and not occupied, we can proceed
@@ -698,8 +739,21 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
     player2.direction = packet.direction;
     player2.animationFrame = packet.animationFrame;
 
-    if (packet.update.occupied)
+    if (packet.doneUpdate)
     {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (updates[i].occupied && updates[i].id == packet.lastReceivedId)
+            {
+                updates[i].occupied = false;
+            }
+        }
+    }
+
+    if (packet.update.occupied && packet.update.id != lastReceivedId)
+    {
+        doneUpdate = true;
+        lastReceivedId = packet.update.id;
         switch (packet.update.action)
         {
         case ACTION_SETWORLDTERRAIN:
@@ -920,6 +974,10 @@ start:
     gameMode = GAMEMODE_SINGLEPLAYER;
     gameStarted = 0;
     gamePlayerMask = 0;
+
+    lastId = 0;
+    doneUpdate = false;
+    lastReceivedId = 255;
 
     videoSetMode(MODE_0_2D);
 
@@ -1724,7 +1782,10 @@ generate:
 
             if (gamePlayerMask & BIT(1))
                 if (gameMode != GAMEMODE_SINGLEPLAYER)
+                {
                     printf("Player %d - x: %f, y: %f\n", 2, player2.x, player2.y);
+                    printf("lastId: %d, doneUpdate: %d, lastRId: %d\n", lastId, doneUpdate, lastReceivedId);
+                }
 
             if (gameMode == GAMEMODE_HOST)
             {
