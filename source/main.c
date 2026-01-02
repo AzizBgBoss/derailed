@@ -59,9 +59,11 @@ uint16_t *bg1Map;
 
 unsigned int frames = 0;
 
+bool debugMode = false;
 int gameMode = GAMEMODE_SINGLEPLAYER;
 uint8_t gameStarted = 0;
 uint8_t gamePlayerMask = 0;
+uint8_t lastId = 0;
 
 static Wifi_AccessPoint AccessPoint;
 
@@ -78,6 +80,7 @@ bool interact;
 struct Update
 {
     bool occupied;
+    uint8_t id;
     uint8_t x;
     uint8_t y;
     uint8_t action;
@@ -164,6 +167,28 @@ void delay(float seconds)
     }
 }
 
+bool queueUpdate(int x, int y, int action, int parameter)
+{
+    if (gameMode != GAMEMODE_SINGLEPLAYER)
+    {
+        for (int i = 0; i < MAX_UPDATES; i++)
+        {
+            if (!updates[i].occupied)
+            {
+                updates[i].occupied = true;
+                updates[i].id = lastId++;
+                updates[i].x = x;
+                updates[i].y = y;
+                updates[i].action = action;
+                updates[i].parameter = parameter;
+                return true;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
 void setWorldTile(int x, int y, int tile)
 {
     if (gameMode != GAMEMODE_CLIENT)
@@ -181,21 +206,7 @@ void setWorldTile(int x, int y, int tile)
         }
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = x;
-                updates[i].y = y;
-                updates[i].action = ACTION_SETWORLDTERRAIN;
-                updates[i].parameter = tile;
-                break;
-            }
-        }
-    }
+    queueUpdate(x, y, ACTION_SETWORLDTERRAIN, tile);
 }
 
 void setWorldObject(int x, int y, int tile)
@@ -213,21 +224,7 @@ void setWorldObject(int x, int y, int tile)
         }
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = x;
-                updates[i].y = y;
-                updates[i].action = ACTION_SETWORLDOBJECT;
-                updates[i].parameter = tile;
-                break;
-            }
-        }
-    }
+    queueUpdate(x, y, ACTION_SETWORLDOBJECT, tile);
 }
 
 void setWorldHealth(int x, int y, int health)
@@ -254,21 +251,7 @@ void setWorldHealth(int x, int y, int health)
         }
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = x;
-                updates[i].y = y;
-                updates[i].action = ACTION_SETWORLDHEALTH;
-                updates[i].parameter = health;
-                break;
-            }
-        }
-    }
+    queueUpdate(x, y, ACTION_SETWORLDHEALTH, health);
 }
 
 void updateWagon(int id)
@@ -287,21 +270,8 @@ void setWagonObject(int wagonId, int slot, int object)
         wagons[wagonId]->slots[slot] = object;
         updateWagon(wagonId);
     }
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = wagonId;
-                updates[i].y = slot;
-                updates[i].action = ACTION_SETWAGONOBJECT;
-                updates[i].parameter = object;
-                break;
-            }
-        }
-    }
+
+    queueUpdate(wagonId, slot, ACTION_SETWAGONOBJECT, object);
 }
 
 void setWagonQuantity(int wagonId, int slot, int quantity)
@@ -312,21 +282,7 @@ void setWagonQuantity(int wagonId, int slot, int quantity)
         updateWagon(wagonId);
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = wagonId;
-                updates[i].y = slot;
-                updates[i].action = ACTION_SETWAGONQUANTITY;
-                updates[i].parameter = quantity;
-                break;
-            }
-        }
-    }
+    queueUpdate(wagonId, slot, ACTION_SETWAGONQUANTITY, quantity);
 }
 
 void setPlayerObjectHeld(int object)
@@ -336,21 +292,7 @@ void setPlayerObjectHeld(int object)
         player.objectHeld = object;
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = 0;
-                updates[i].y = 0;
-                updates[i].action = ACTION_SETPLAYEROBJECTHELD;
-                updates[i].parameter = object;
-                break;
-            }
-        }
-    }
+    queueUpdate(0, 0, ACTION_SETPLAYEROBJECTHELD, object);
 }
 
 void setPlayerQuantity(int quantity)
@@ -362,21 +304,7 @@ void setPlayerQuantity(int quantity)
             player.objectHeld = EMPTY;
     }
 
-    if (gameMode != GAMEMODE_SINGLEPLAYER)
-    {
-        for (int i = 0; i < MAX_UPDATES; i++)
-        {
-            if (!updates[i].occupied)
-            {
-                updates[i].occupied = true;
-                updates[i].x = 0;
-                updates[i].y = 0;
-                updates[i].action = ACTION_SETPLAYERQUANTITY;
-                updates[i].parameter = quantity;
-                break;
-            }
-        }
-    }
+    queueUpdate(0, 0, ACTION_SETPLAYERQUANTITY, quantity);
 }
 
 const char *getObjectName(int object)
@@ -493,15 +421,14 @@ void generateWorld(int seed)
             }
         }
     }
-    for (int x = 0; x < WORLD_WIDTH; x++)
+
+    for (int x = 0; x < 8; x++)
     {
-        setWorldTile(x, 5, TILE_EMPTY); // Clear a path in the middle
-        if (x < 8)
-        {
-            setWorldObject(x, 5, OBJECT_RAIL);
-            setWorldTile(x, 6, TILE_EMPTY);
-        }
+        setWorldTile(x, 5, TILE_EMPTY);
+        setWorldObject(x, 5, OBJECT_RAIL);
+        setWorldTile(x, 6, TILE_EMPTY);
     }
+
     setWorldObject(0, 6, OBJECT_WOOD);
     setWorldObject(1, 6, OBJECT_WOOD);
     setWorldObject(2, 6, OBJECT_IRON);
@@ -517,7 +444,8 @@ void generateWorld(int seed)
     player.objectHeld = EMPTY;
     player.quantityHeld = 0;
 
-    if (temp == GAMEMODE_HOST) {
+    if (temp == GAMEMODE_HOST)
+    {
         player2.objectHeld = EMPTY;
         player2.quantityHeld = 0;
     }
@@ -1335,8 +1263,10 @@ generate:
 
         int held = keysHeld();
         int down = keysDown();
-        if (held & KEY_START)
+        if (down & KEY_START)
             goto start;
+        if (down & KEY_SELECT)
+            debugMode = !debugMode;
 
         int newX = player.x;
         int newY = player.y;
@@ -1655,7 +1585,13 @@ generate:
         // test for locomotive derailment
         if (locomotive.direction == DIR_RIGHT)
         {
-            if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
+            if (locomotive.x + locomotive.sizeX + locomotive.speed >= WORLD_WIDTH * TILE_SIZE)
+            {
+                printf("You won :)\n");
+                delay(2);
+                goto start;
+            }
+            else if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
             {
                 printf("You lost :(\n");
                 delay(2);
@@ -1758,38 +1694,40 @@ generate:
 
         printf("Progress: %.1f%%\n\n", locomotive.x * 100 / (WORLD_WIDTH * TILE_SIZE - locomotive.sizeX));
 
-        if (player.objectHeld != EMPTY)
+        if (!debugMode)
         {
-            if (player.objectHeld != OBJECT_AXE && player.objectHeld != OBJECT_PICKAXE)
-                printf("Holding: %s x %d\n\n", getObjectName(player.objectHeld), player.quantityHeld);
-            else
-                printf("Holding: %s\n\n", getObjectName(player.objectHeld));
+            if (player.objectHeld != EMPTY)
+            {
+                if (player.objectHeld != OBJECT_AXE && player.objectHeld != OBJECT_PICKAXE)
+                    printf("Holding: %s x %d\n\n", getObjectName(player.objectHeld), player.quantityHeld);
+                else
+                    printf("Holding: %s\n\n", getObjectName(player.objectHeld));
 
-            printf("%s\n", getObjectDescription(player.objectHeld));
+                printf("%s\n", getObjectDescription(player.objectHeld));
+            }
+
+            if (gameMode == GAMEMODE_HOST)
+                printf("\x1b[23;0HHost Mode");
         }
-
-        if (gameMode == GAMEMODE_HOST)
-            printf("\x1b[23;0HHost Mode");
-
-        /*
-        printf("\x1b[2J");
-        printf("x: %f, y: %f, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
-        printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
-        printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
-        printf("chunk: %d, scroll: %d\n", chunk, scroll);
-        printf("interact: %d\n", interact);
-
-        if (gamePlayerMask & BIT(1))
-            if (gameMode != GAMEMODE_SINGLEPLAYER)
-                printf("Player %d - x: %f, y: %f\n", 2, player2.x, player2.y);
-
-        if (gameMode == GAMEMODE_HOST)
+        else
         {
-            int num_clients = Wifi_MultiplayerGetNumClients();
-            printf("Num clients: %d (mask 0x%02X)\n", num_clients, gamePlayerMask);
-            printf("\n");
+            printf("x: %f, y: %f, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
+            printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
+            printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
+            printf("chunk: %d, scroll: %d\n", chunk, scroll);
+            printf("interact: %d\n", interact);
+
+            if (gamePlayerMask & BIT(1))
+                if (gameMode != GAMEMODE_SINGLEPLAYER)
+                    printf("Player %d - x: %f, y: %f\n", 2, player2.x, player2.y);
+
+            if (gameMode == GAMEMODE_HOST)
+            {
+                int num_clients = Wifi_MultiplayerGetNumClients();
+                printf("Num clients: %d (mask 0x%02X)\n", num_clients, gamePlayerMask);
+                printf("\n");
+            }
         }
-        */
 
         frames++;
     }
