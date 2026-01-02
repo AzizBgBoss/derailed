@@ -648,6 +648,36 @@ typedef struct
     struct Update update;
 } pkt_client_to_host;
 
+void SendClientStateToHost(void)
+{
+    pkt_client_to_host packet;
+    packet.x = player.x;
+    packet.y = player.y;
+    packet.direction = player.direction;
+    packet.animationFrame = player.animationFrame;
+
+    packet.update.occupied = false;
+    for (int i = 0; i < MAX_UPDATES; i++)
+    {
+        if (updates[i].occupied)
+        {
+            packet.update.occupied = updates[i].occupied;
+            packet.update.x = updates[i].x;
+            packet.update.y = updates[i].y;
+            packet.update.action = updates[i].action;
+            packet.update.parameter = updates[i].parameter;
+            updates[i].occupied = false;
+            break;
+        }
+        if (i == MAX_UPDATES - 1) // If last update and not occupied, we can proceed
+        {
+            interact = true;
+        }
+    }
+
+    Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
+}
+
 void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
 {
     if (len < sizeof(pkt_client_to_host))
@@ -1231,32 +1261,7 @@ generate:
         }
         else if (gameMode == GAMEMODE_CLIENT)
         {
-            pkt_client_to_host packet;
-            packet.x = player.x;
-            packet.y = player.y;
-            packet.direction = player.direction;
-            packet.animationFrame = player.animationFrame;
-
-            packet.update.occupied = false;
-            for (int i = 0; i < MAX_UPDATES; i++)
-            {
-                if (updates[i].occupied)
-                {
-                    packet.update.occupied = updates[i].occupied;
-                    packet.update.x = updates[i].x;
-                    packet.update.y = updates[i].y;
-                    packet.update.action = updates[i].action;
-                    packet.update.parameter = updates[i].parameter;
-                    updates[i].occupied = false;
-                    break;
-                }
-                if (i == MAX_UPDATES - 1) // If last update and not occupied, we can proceed
-                {
-                    interact = true;
-                }
-            }
-
-            Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
+            SendClientStateToHost();
         }
 
         scanKeys();
@@ -1727,6 +1732,8 @@ generate:
                 printf("Num clients: %d (mask 0x%02X)\n", num_clients, gamePlayerMask);
                 printf("\n");
             }
+
+            printf("Press SELECT to disable debug mode\n");
         }
 
         frames++;
