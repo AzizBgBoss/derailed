@@ -2,7 +2,7 @@
 #
 # SPDX-FileContributor: Antonio Niño Díaz, 2024-2025
 
-COMMIT_HASH := $(shell git describe --always --dirty)
+COMMIT_HASH := $(shell git describe --always)
 CFLAGS += -DCOMMIT_HASH=\"$(COMMIT_HASH)\"
 
 BLOCKSDS	?= /opt/blocksds/core
@@ -12,6 +12,7 @@ BLOCKSDS	?= /opt/blocksds/core
 NAME 		:= derailed
 GAME_TITLE	:= Derailed
 GAME_SUBTITLE	:= By AzizBgBoss
+GAME_ICON    := media/icon.png
 
 GFXDIRS		:= gfx
 
