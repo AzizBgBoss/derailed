@@ -7,6 +7,7 @@
 
 #include "tilemap.h"
 #include "player.h"
+#include "player2.h"
 #include "ui.h"
 #include "wagons.h"
 
@@ -48,7 +49,7 @@
 #define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
 
-// TODO: My code is very not clean, i need to get rid of repeated expressions and split the code into functions
+// TODO: My code is not clean, i need to get rid of repeated expressions and split the code into functions
 // There's also a lot of magic numbers, i need to define them
 
 int bg0;
@@ -378,6 +379,44 @@ void setPlayerQuantity(int quantity)
     }
 }
 
+const char *getObjectName(int object)
+{
+    switch (object)
+    {
+    case OBJECT_RAIL:
+        return "Rail";
+    case OBJECT_WOOD:
+        return "Wood";
+    case OBJECT_IRON:
+        return "Iron";
+    case OBJECT_AXE:
+        return "Axe";
+    case OBJECT_PICKAXE:
+        return "Pickaxe";
+    default:
+        return "";
+    }
+}
+
+const char *getObjectDescription(int object)
+{
+    switch (object)
+    {
+    case OBJECT_RAIL:
+        return "Put rails in front of the locomotive to build tracks and avoid derailing it and losing.";
+    case OBJECT_WOOD:
+        return "Put wood in the storage wagon along with iron to build tracks.";
+    case OBJECT_IRON:
+        return "Put iron in the storage wagon along with wood to build tracks.";
+    case OBJECT_AXE:
+        return "Use them to chop trees and obtain wood.";
+    case OBJECT_PICKAXE:
+        return "Use them to mine rocks and obtain iron.";
+    default:
+        return "";
+    }
+}
+
 static inline bool isSolidTerrain(int tx, int ty)
 {
     if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT)
@@ -477,6 +516,11 @@ void generateWorld(int seed)
     player.direction = DIR_DOWN;
     player.objectHeld = EMPTY;
     player.quantityHeld = 0;
+
+    if (temp == GAMEMODE_HOST) {
+        player2.objectHeld = EMPTY;
+        player2.quantityHeld = 0;
+    }
 
     for (int i = 0; i < WAGONS; i++)
     {
@@ -716,17 +760,17 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
             setWagonQuantity(packet.update.x, packet.update.y, packet.update.parameter);
             break;
         case ACTION_SETPLAYEROBJECTHELD:
-            {
-                player2.objectHeld = packet.update.parameter;
-            }
-            break;
+        {
+            player2.objectHeld = packet.update.parameter;
+        }
+        break;
         case ACTION_SETPLAYERQUANTITY:
-            {
-                player2.quantityHeld = packet.update.parameter;
-                if (player2.quantityHeld == 0)
-                    player2.objectHeld = EMPTY;
-            }
-            break;
+        {
+            player2.quantityHeld = packet.update.parameter;
+            if (player2.quantityHeld == 0)
+                player2.objectHeld = EMPTY;
+        }
+        break;
         }
     }
 
@@ -956,7 +1000,7 @@ start:
     railBuilder.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles + 8 * 8 * 2 * 2, railBuilder.gfx, 8 * 8 * 4 * 2);
     player2.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-    dmaCopy(playerTiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -1325,10 +1369,10 @@ generate:
         if (!(held & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)))
         {
             player.animationFrame = 0;
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction, player.gfx, 8 * 8 * 4);
+            dmaCopy(((gameMode == GAMEMODE_CLIENT) ? player2Tiles : playerTiles) + 8 * 8 * 4 * player.direction, player.gfx, 8 * 8 * 4);
         }
         else
-            dmaCopy(playerTiles + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
+            dmaCopy(((gameMode == GAMEMODE_CLIENT) ? player2Tiles : playerTiles) + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
 
         if (!checkCollision(newX, player.y))
             player.x = newX;
@@ -1550,11 +1594,16 @@ generate:
                 {
                     // Put object in wagon
                     setWagonObject(player.selectedWagonId, player.selectedWagonSlot, player.objectHeld);
-                    if (player.quantityHeld > 0 && wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] < wagons[player.selectedWagonId]->maxQuantity)
+                    int temp1 = player.quantityHeld;
+                    int temp2 = wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot];
+                    while (temp1 > 0 && temp2 < wagons[player.selectedWagonId]->maxQuantity)
                     {
-                        setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] + 1);
-                        setPlayerQuantity(player.quantityHeld - 1);
+                        temp1--;
+                        temp2++;
                     }
+
+                    setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, temp2);
+                    setPlayerQuantity(temp1);
 
                     updateWagon(player.selectedWagonId);
                     if (gameMode == GAMEMODE_CLIENT)
@@ -1575,11 +1624,17 @@ generate:
             else if (player.selectedWagon) // Playing is selecting an output wagon
             {
                 setPlayerObjectHeld(wagons[player.selectedWagonId]->slots[player.selectedWagonSlot]);
-                if (wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] > 0 && player.quantityHeld < player.maxQuantityHeld)
+                int temp1 = wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot];
+                int temp2 = player.quantityHeld;
+                while (temp1 > 0 && temp2 < player.maxQuantityHeld)
                 {
-                    setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, wagons[player.selectedWagonId]->quantity[player.selectedWagonSlot] - 1);
-                    setPlayerQuantity(player.quantityHeld + 1);
+                    temp1--;
+                    temp2++;
                 }
+
+                setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, temp1);
+                setPlayerQuantity(temp2);
+
                 if (gameMode == GAMEMODE_CLIENT)
                     interact = false;
             }
@@ -1682,7 +1737,7 @@ generate:
                 if (player2.x >= scroll - TILE_SIZE && player2.x < scroll + SCREEN_WIDTH)
                 {
                     oamSetXY(&oamMain, 5, player2.x - scroll, player2.y);
-                    dmaCopy(playerTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+                    dmaCopy(((gameMode == GAMEMODE_CLIENT) ? playerTiles : player2Tiles) + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                 }
                 else
                     oamSetXY(&oamMain, 5, -16, -16);
@@ -1700,6 +1755,24 @@ generate:
         oamUpdate(&oamMain);
 
         printf("\x1b[2J");
+
+        printf("Progress: %.1f%%\n\n", locomotive.x * 100 / (WORLD_WIDTH * TILE_SIZE - locomotive.sizeX));
+
+        if (player.objectHeld != EMPTY)
+        {
+            if (player.objectHeld != OBJECT_AXE && player.objectHeld != OBJECT_PICKAXE)
+                printf("Holding: %s x %d\n\n", getObjectName(player.objectHeld), player.quantityHeld);
+            else
+                printf("Holding: %s\n\n", getObjectName(player.objectHeld));
+
+            printf("%s\n", getObjectDescription(player.objectHeld));
+        }
+
+        if (gameMode == GAMEMODE_HOST)
+            printf("\x1b[23;0HHost Mode");
+
+        /*
+        printf("\x1b[2J");
         printf("x: %f, y: %f, dir: %d, obj: %d\n", player.x, player.y, player.direction, player.selectedObject);
         printf("x: %d, y: %d, object: %d\n", player.selectedObjectX, player.selectedObjectY, worldObjects[player.selectedObjectX][player.selectedObjectY]);
         printf("obj held: %d, quantity: %d\n", player.objectHeld, player.quantityHeld);
@@ -1716,6 +1789,7 @@ generate:
             printf("Num clients: %d (mask 0x%02X)\n", num_clients, gamePlayerMask);
             printf("\n");
         }
+        */
 
         frames++;
     }
