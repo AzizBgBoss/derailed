@@ -1496,8 +1496,8 @@ generate:
             worldObjects[player.selectedObjectX][player.selectedObjectY] != EMPTY &&
             worldObjects[player.selectedObjectX][player.selectedObjectY] != OBJECT_RAIL) // Don't include rails for now to avoid unintentional pick up in the main railway
         {
-            setPlayerQuantity(player.quantityHeld + 1);
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
+            setPlayerQuantity(player.quantityHeld + 1);
             if (gameMode == GAMEMODE_CLIENT)
                 interact = false;
         }
