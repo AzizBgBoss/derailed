@@ -12,13 +12,14 @@
 #include "player2.h"
 #include "ui.h"
 #include "wagons.h"
+#include "intro.h"
 
 #include "soundbank.h"
 
 #define SCREEN_WIDTH 256
 #define SCREEN_HEIGHT 192
 
-#define WORLD_WIDTH 128
+#define WORLD_WIDTH 64
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
 #define PLAYER_SIZE 16
@@ -76,6 +77,7 @@ static Wifi_AccessPoint AccessPoint;
 int scroll;
 int chunk; // Current chunk loaded (each chunk is 4 tiles wide)
 int seed;
+int worldPart;
 
 int lastPlacedX;
 int lastPlacedY;
@@ -309,6 +311,7 @@ void setPlayerQuantity(int quantity)
         player.quantityHeld = quantity;
         if (player.quantityHeld == 0)
             player.objectHeld = EMPTY;
+        mmEffect(SFX_PICKUP);
     }
 
     queueUpdate(0, 0, ACTION_SETPLAYERQUANTITY, quantity);
@@ -400,7 +403,12 @@ void generateWorld(int seed)
 {
     uint8_t temp = gameMode;
     gameMode = GAMEMODE_SINGLEPLAYER; // Temporarily disable networking during world generation
-    printf("Generating world with seed %d\n", seed);
+    printf("\x1b[2J");
+    if (worldPart == 0)
+        printf("Generating world with seed %d\n", seed);
+    else
+        printf("Generating world part %d with seed %d\n", worldPart + 1, seed);
+
     for (int x = 0; x < WORLD_WIDTH; x++)
     {
         for (int y = 0; y < WORLD_HEIGHT; y++)
@@ -413,7 +421,7 @@ void generateWorld(int seed)
     {
         for (int y = 0; y < WORLD_HEIGHT; y++)
         {
-            float noiseValue = fractalPerlin2D(x * 0.1f, y * 0.1f, 4, 0.5f, 1.0f, seed);
+            float noiseValue = fractalPerlin2D((x + WORLD_WIDTH * worldPart) * 0.1f, y * 0.1f, 4, 0.5f, 1.0f, seed);
             if (noiseValue < -0.2f)
             {
                 setWorldTile(x, y, TILE_ROCK);
@@ -502,6 +510,8 @@ typedef struct
     uint8_t player_mask;
     bool doneUpdate;
     uint8_t lastReceivedId;
+    float locomotiveX;
+    float locomotiveSpeed;
     struct Player playerHost;
     struct Player playerClient;
     struct Update update;
@@ -519,6 +529,9 @@ void SendHostStateToClients(void)
     host_packet.playerHost.y = player.y;
     host_packet.playerHost.direction = player.direction;
     host_packet.playerHost.animationFrame = player.animationFrame;
+
+    host_packet.locomotiveX = locomotive.x;
+    host_packet.locomotiveSpeed = locomotive.speed;
 
     host_packet.playerClient.objectHeld = player2.objectHeld;
     host_packet.playerClient.quantityHeld = player2.quantityHeld;
@@ -572,7 +585,12 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     player2.direction = packet.playerHost.direction;
     player2.animationFrame = packet.playerHost.animationFrame;
 
+    locomotive.x = packet.locomotiveX;
+    locomotive.speed = packet.locomotiveSpeed;
+
     player.objectHeld = packet.playerClient.objectHeld;
+    if (player.quantityHeld != packet.playerClient.quantityHeld)
+        mmEffect(SFX_PICKUP);
     player.quantityHeld = packet.playerClient.quantityHeld;
 
     if (packet.doneUpdate)
@@ -839,7 +857,7 @@ bool AccessPointSelectionMenu(void)
 
         printf("\x1b[2J");
 
-        printf("Number of AP: %d\n", count);
+        printf("Number of nearby hosts: %d\n", count);
         printf("\n");
 
         if (count == 0)
@@ -888,18 +906,14 @@ bool AccessPointSelectionMenu(void)
             // don't offer any Nintendo information. Also, DSWiFi host access
             // points don't use any encryption.
 
-            printf("%s [%.24s]\n", i == chosen ? "->" : "  ", ap.ssid);
-            printf("   Name: [%.19s]\n", name);
-            printf("   Players %d/%d | %08X\n", ap.nintendo.players_current,
-                   ap.nintendo.players_max, (unsigned int)ap.nintendo.game_id);
-            printf("   %-4s | Ch %2d | RSSI %d\n",
-                   Wifi_ApSecurityTypeString(ap.security_type), ap.channel,
-                   ap.rssi);
+            printf("%s %.19s\n", i == chosen ? "> " : "  ", name);
+            printf("   Players %d/%d\n", ap.nintendo.players_current,
+                   ap.nintendo.players_max);
 
             if (ap.nintendo.allows_connections)
-                printf("OPEN\n");
+                printf("    OPEN\n");
             else
-                printf("CLOSED\n");
+                printf("    CLOSED\n");
             printf("\n");
 
             if (i == chosen)
@@ -1008,6 +1022,8 @@ int main(int argc, char **argv)
     mmLoadEffect(SFX_SELECTED);
     mmLoadEffect(SFX_EXPLOSION);
     mmLoadEffect(SFX_BREAK);
+    mmLoadEffect(SFX_WIN);
+    mmLoadEffect(SFX_PICKUP);
 
 start:
 
@@ -1027,11 +1043,277 @@ start:
     doneUpdate = false;
     lastReceivedId = 255;
 
+    worldPart = 0;
+    locomotive.speed = 0.01f;
+
     videoSetMode(MODE_0_2D);
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
 
     consoleDemoInit();
+    // white bg with red text
+    BG_PALETTE_SUB[0] = RGB15(31, 31, 31);
+    consoleSetColor(NULL, CONSOLE_RED);
+
+    bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_256x256, 0, 1);
+
+    dmaCopy(introTiles, bgGetGfxPtr(bg0), introTilesLen);
+    dmaCopy(introMap, bgGetMapPtr(bg0), introMapLen);
+    dmaCopy(introPal, BG_PALETTE, introPalLen);
+
+    int selection = 0;
+    while (1)
+    {
+        swiWaitForVBlank();
+        scanKeys();
+
+        printf("\x1b[2J");
+        for (int i = 0; i < 6; i++)
+        {
+            if (i == selection)
+                printf("\x1b[%d;0H> ", i);
+            else
+                printf("\x1b[%d;0H  ", i);
+            switch (i)
+            {
+            case 0:
+                printf("Choose Seed\n");
+                break;
+            case 1:
+                printf("Random Seed\n");
+                break;
+            case 2:
+                printf("Host Game\n");
+                break;
+            case 3:
+                printf("Join Game\n");
+                break;
+            case 4:
+                printf("Credits\n");
+                break;
+            case 5:
+                printf("Exit Game\n");
+                break;
+            }
+        }
+
+        if (keysDown() & KEY_UP)
+        {
+            selection--;
+            if (selection < 0)
+                selection = 5;
+            mmEffect(SFX_SELECT);
+        }
+        if (keysDown() & KEY_DOWN)
+        {
+            selection++;
+            if (selection > 5)
+                selection = 0;
+            mmEffect(SFX_SELECT);
+        }
+        if (keysDown() & KEY_A)
+        {
+            mmEffect(SFX_SELECTED);
+            if (selection == 0) // Choose Seed
+            {
+                printf("\x1b[2J");
+                printf("Enter Seed:\nUse arrow keys to change digits, A to confirm\n");
+                seed = 0;
+                while (1)
+                {
+                    swiWaitForVBlank();
+                    scanKeys();
+                    printf("\x1b[8;0H");
+                    for (int j = 7; j >= 0; j--)
+                    {
+                        printf("%X", (seed >> (j * 4)) & 0xF);
+                    }
+                    printf("\n");
+                    for (int j = 0; j < 8; j++)
+                    {
+                        if (j == selection)
+                            printf("^");
+                        else
+                            printf(" ");
+                    }
+                    if (keysDown() & KEY_LEFT)
+                    {
+                        selection--;
+                        if (selection < 0)
+                            selection = 7;
+                        mmEffect(SFX_SELECT);
+                    }
+                    else if (keysDown() & KEY_RIGHT)
+                    {
+                        selection++;
+                        if (selection > 7)
+                            selection = 0;
+                        mmEffect(SFX_SELECT);
+                    }
+                    else if (keysDown() & (KEY_UP | KEY_DOWN))
+                    {
+                        int shift = (7 - selection) * 4;
+                        int digit = (seed >> shift) & 0xF;
+
+                        if (keysDown() & KEY_UP)
+                            digit = (digit + 1) & 0xF;
+                        else
+                            digit = (digit - 1) & 0xF;
+
+                        seed &= ~(0xF << shift);
+                        seed |= (digit << shift);
+
+                        mmEffect(SFX_SELECT);
+                    }
+                    else if (keysDown() & KEY_A)
+                    {
+                        mmEffect(SFX_SELECTED);
+                        goto generate;
+                    }
+                }
+            }
+            else if (selection == 1) // Random Seed
+            {
+                seed = rand() % 0xFFFFFFFF;
+                goto generate;
+            }
+            else if (selection == 2) // Host Game
+            {
+                if (!initLocalWifi())
+                    goto start;
+
+                initHostMode();
+
+                printf("Host ready!\n");
+
+                while (1)
+                {
+                    swiWaitForVBlank();
+
+                    scanKeys();
+
+                    u16 keys_down = keysDown();
+
+                    printf("\x1b[2J");
+                    if (Wifi_MultiplayerGetNumClients() > 0)
+                        printf("Player connected!\nPress A to start the game\n");
+                    else
+                        printf("Waiting for another player...\n");
+                    printf("\n");
+
+                    if ((keys_down & KEY_A) && Wifi_MultiplayerGetNumClients() > 0)
+                    {
+                        mmEffect(SFX_SELECTED);
+                        break;
+                    }
+                    if ((keys_down & KEY_START))
+                        goto start;
+
+                    int num_clients = Wifi_MultiplayerGetNumClients();
+
+                    // Print all client information. This normally isn't needed, all you
+                    // need is the mask of AIDs.
+                    Wifi_ConnectedClient client[15];
+                    num_clients = Wifi_MultiplayerGetClients(15, &(client[0]));
+
+                    for (int i = 0; i < num_clients; i++)
+                    {
+                        printf("Connected player: %04X:%04X:%04X\n", client[i].macaddr[0], client[i].macaddr[1],
+                               client[i].macaddr[2]);
+                    }
+                }
+
+                Wifi_MultiplayerAllowNewClients(false);
+                gameMode = GAMEMODE_HOST;
+                gameStarted = 1;
+
+                printf("Game starting...\n");
+                delay(1);
+
+                seed = rand() % 0xFFFFFFFF;
+                goto generate;
+            }
+            else if (selection == 3) // Join Game
+            {
+                if (!initLocalWifi())
+                    goto start;
+
+                if (!AccessPointSelectionMenu())
+                {
+                    goto start;
+                }
+
+                if (!initClientMode())
+                {
+                    goto start;
+                }
+
+                printf("\x1b[2J");
+
+                printf("Connected successfully!\n\n");
+
+                printf("Waiting for the host to start the game...\n\n");
+
+                printf("START: Reset\n");
+
+                while (gameStarted == 0)
+                {
+                    swiWaitForVBlank();
+
+                    scanKeys();
+
+                    u16 keys_down = keysDown();
+                    if (keys_down & KEY_START)
+                    {
+                        goto start;
+                    }
+                }
+                gameMode = GAMEMODE_CLIENT;
+
+                printf("Game started!\n");
+                delay(1);
+
+                goto generate;
+            }
+            else if (selection == 4) // Credits
+            {
+                printf("\x1b[2J");
+                printf("Derailed!\n\
+https://github.com/AzizBgBoss/derailed/\n\
+Commit %s\n\
+\n\
+Made by: AzizBgBoss\n\
+\n\
+Special thanks to:\n\
+AntonioND for making the BlocksDS toolchain\n\
+Anadune & Floppy for the music\n\
+\n\
+\n\
+And you for trying Derailed! out\n\
+\n\
+Try other DS games at https://github.com/AzizBgBoss/\n\
+\n\
+Press START to go back.\n",
+                       COMMIT_HASH);
+                while (1)
+                {
+                    swiWaitForVBlank();
+
+                    scanKeys();
+
+                    u16 keys_down = keysDown();
+                    if (keys_down & KEY_START)
+                    {
+                        goto start;
+                    }
+                }
+            }
+            else // Exit Game
+                return 0;
+        }
+    }
+
+generate:
 
     bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_512x256, 0, 1);
     dmaCopy(tilemapTiles, bgGetGfxPtr(bg0), tilemapTilesLen);
@@ -1142,226 +1424,10 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
-    int selection = 0;
-    while (1)
-    {
-        swiWaitForVBlank();
-        scanKeys();
-
-        printf("\x1b[2J");
-        for (int i = 0; i < 5; i++)
-        {
-            if (i == selection)
-                printf("\x1b[%d;0H> ", i);
-            else
-                printf("\x1b[%d;0H  ", i);
-            switch (i)
-            {
-            case 0:
-                printf("Choose Seed\n");
-                break;
-            case 1:
-                printf("Random Seed\n");
-                break;
-            case 2:
-                printf("Host Game\n");
-                break;
-            case 3:
-                printf("Join Game\n");
-                break;
-            case 4:
-                printf("Exit Game\n");
-                break;
-            }
-        }
-        printf("\x1b[24;0HCommit: %s", COMMIT_HASH);
-
-        if (keysDown() & KEY_UP)
-        {
-            selection--;
-            if (selection < 0)
-                selection = 4;
-            mmEffect(SFX_SELECT);
-        }
-        if (keysDown() & KEY_DOWN)
-        {
-            selection++;
-            if (selection > 4)
-                selection = 0;
-            mmEffect(SFX_SELECT);
-        }
-        if (keysDown() & KEY_A)
-        {
-            mmEffect(SFX_SELECTED);
-            if (selection == 0) // Choose Seed
-            {
-                printf("\x1b[4;0HEnter Seed:\nUse arrow keys to change digits, A to confirm\n");
-                seed = 0;
-                while (1)
-                {
-                    swiWaitForVBlank();
-                    scanKeys();
-                    printf("\x1b[8;0H");
-                    for (int j = 7; j >= 0; j--)
-                    {
-                        printf("%X", (seed >> (j * 4)) & 0xF);
-                    }
-                    printf("\n");
-                    for (int j = 0; j < 8; j++)
-                    {
-                        if (j == selection)
-                            printf("^");
-                        else
-                            printf(" ");
-                    }
-                    if (keysDown() & KEY_LEFT)
-                    {
-                        selection--;
-                        if (selection < 0)
-                            selection = 7;
-                        mmEffect(SFX_SELECT);
-                    }
-                    else if (keysDown() & KEY_RIGHT)
-                    {
-                        selection++;
-                        if (selection > 7)
-                            selection = 0;
-                        mmEffect(SFX_SELECT);
-                    }
-                    else if (keysDown() & (KEY_UP | KEY_DOWN))
-                    {
-                        int shift = (7 - selection) * 4;
-                        int digit = (seed >> shift) & 0xF;
-
-                        if (keysDown() & KEY_UP)
-                            digit = (digit + 1) & 0xF;
-                        else
-                            digit = (digit - 1) & 0xF;
-
-                        seed &= ~(0xF << shift);
-                        seed |= (digit << shift);
-
-                        mmEffect(SFX_SELECT);
-                    }
-                    else if (keysDown() & KEY_A)
-                    {
-                        mmEffect(SFX_SELECTED);
-                        goto generate;
-                    }
-                }
-            }
-            else if (selection == 1) // Random Seed
-            {
-                seed = rand() % 0xFFFFFFFF;
-                goto generate;
-            }
-            else if (selection == 2) // Host Game
-            {
-                if (!initLocalWifi())
-                    goto start;
-
-                initHostMode();
-
-                printf("Host ready!\n");
-
-                while (1)
-                {
-                    swiWaitForVBlank();
-
-                    scanKeys();
-
-                    u16 keys_down = keysDown();
-
-                    printf("\x1b[2J");
-                    printf("Hosting on channel 6\n");
-                    if (Wifi_MultiplayerGetNumClients() > 0)
-                        printf("Press A to start the game\n");
-                    printf("\n");
-
-                    if ((keys_down & KEY_A) && Wifi_MultiplayerGetNumClients() > 0)
-                    {
-                        mmEffect(SFX_SELECTED);
-                        break;
-                    }
-                    if ((keys_down & KEY_START))
-                        goto start;
-
-                    int num_clients = Wifi_MultiplayerGetNumClients();
-                    u16 players_mask = Wifi_MultiplayerGetClientMask();
-                    printf("Num clients: %d (mask 0x%02X)\n", num_clients, players_mask);
-                    printf("\n");
-
-                    // Print all client information. This normally isn't needed, all you
-                    // need is the mask of AIDs.
-                    Wifi_ConnectedClient client[15];
-                    num_clients = Wifi_MultiplayerGetClients(15, &(client[0]));
-
-                    for (int i = 0; i < num_clients; i++)
-                    {
-                        printf("%d (%d) %04X:%04X:%04X\n", client[i].association_id,
-                               client[i].state, client[i].macaddr[0], client[i].macaddr[1],
-                               client[i].macaddr[2]);
-                    }
-                }
-
-                Wifi_MultiplayerAllowNewClients(false);
-                gameMode = GAMEMODE_HOST;
-                gameStarted = 1;
-
-                printf("Game starting...\n");
-                delay(1);
-
-                seed = rand() % 0xFFFFFFFF;
-                goto generate;
-            }
-            else if (selection == 3) // Join Game
-            {
-                if (!initLocalWifi())
-                    goto start;
-
-                if (!AccessPointSelectionMenu())
-                {
-                    goto start;
-                }
-
-                if (!initClientMode())
-                {
-                    goto start;
-                }
-
-                printf("Waiting for the game to start\n");
-
-                printf("START: Reset\n");
-
-                while (gameStarted == 0)
-                {
-                    swiWaitForVBlank();
-
-                    scanKeys();
-
-                    u16 keys_down = keysDown();
-                    if (keys_down & KEY_START)
-                    {
-                        goto start;
-                    }
-                }
-                gameMode = GAMEMODE_CLIENT;
-
-                printf("Game started!\n");
-                delay(1);
-
-                goto generate;
-            }
-            else // Exit Game
-                return 0;
-        }
-    }
-
-generate:
-
-    mmPause();
+    mmStop();
     generateWorld(seed);
-    mmResume();
+    mmStart(MOD_JOINT_PEOPLE, MM_PLAY_LOOP);
+
     interact = true;
 
     while (1)
@@ -1720,11 +1786,14 @@ generate:
         {
             if (locomotive.x + locomotive.sizeX + locomotive.speed >= WORLD_WIDTH * TILE_SIZE)
             {
+                locomotive.speed *= 1.5f;
                 printf("\x1b[2J");
-                printf("You won :)\n");
+                printf("You won :)\n\nThe train's speed will now be %.3fm/s", (locomotive.speed * 60) / TILE_SIZE);
+                worldPart++;
                 mmStop();
-                delay(2);
-                goto start;
+                mmEffect(SFX_WIN);
+                delay(3);
+                goto generate;
             }
             else if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
             {
@@ -1737,7 +1806,8 @@ generate:
             }
             else
             {
-                locomotive.x += locomotive.speed;
+                if (gameMode != GAMEMODE_CLIENT)
+                    locomotive.x += locomotive.speed;
                 if (locomotive.x + locomotive.sizeX >= player.x && locomotive.x + locomotive.sizeX < player.x + PLAYER_SIZE &&
                     ((locomotive.y >= player.y && locomotive.y < player.y + PLAYER_SIZE) ||
                      (locomotive.y + locomotive.sizeY > player.y && locomotive.y + locomotive.sizeY <= player.y + PLAYER_SIZE))) // The front of the locomotive is colliding with the player
@@ -1830,7 +1900,9 @@ generate:
 
         printf("\x1b[2J");
 
-        printf("Progress: %.1f%%\n\n", locomotive.x * 100 / (WORLD_WIDTH * TILE_SIZE - locomotive.sizeX));
+        printf("Progress: %.1f%%\n", locomotive.x * 100 / (WORLD_WIDTH * TILE_SIZE - locomotive.sizeX));
+        printf("Train speed: %.3fm/s\n", (locomotive.speed * 60) / TILE_SIZE);
+        printf("Seed: %d, part: %d\n\n", seed, worldPart + 1);
 
         if (!debugMode)
         {
