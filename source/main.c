@@ -1902,7 +1902,7 @@ generate:
 
         printf("Progress: %.1f%%\n", locomotive.x * 100 / (WORLD_WIDTH * TILE_SIZE - locomotive.sizeX));
         printf("Train speed: %.3fm/s\n", (locomotive.speed * 60) / TILE_SIZE);
-        printf("Seed: %d, part: %d\n\n", seed, worldPart + 1);
+        printf("Seed: %x, part: %d\n\n", seed, worldPart + 1);
 
         if (!debugMode)
         {
