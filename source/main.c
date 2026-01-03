@@ -257,8 +257,8 @@ void setWorldHealth(int x, int y, int health)
             bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
             bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
         }
-        mmEffect(SFX_BREAK);
     }
+    mmEffect(SFX_BREAK);
 
     queueUpdate(x, y, ACTION_SETWORLDHEALTH, health);
 }
@@ -311,8 +311,8 @@ void setPlayerQuantity(int quantity)
         player.quantityHeld = quantity;
         if (player.quantityHeld == 0)
             player.objectHeld = EMPTY;
-        mmEffect(SFX_PICKUP);
     }
+    mmEffect(SFX_PICKUP);
 
     queueUpdate(0, 0, ACTION_SETPLAYERQUANTITY, quantity);
 }
@@ -589,8 +589,6 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     locomotive.speed = packet.locomotiveSpeed;
 
     player.objectHeld = packet.playerClient.objectHeld;
-    if (player.quantityHeld != packet.playerClient.quantityHeld)
-        mmEffect(SFX_PICKUP);
     player.quantityHeld = packet.playerClient.quantityHeld;
 
     if (packet.doneUpdate)
@@ -663,7 +661,6 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
                     bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
                     bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
                 }
-                mmEffect(SFX_BREAK);
             }
             break;
         case ACTION_SETWAGONOBJECT:
