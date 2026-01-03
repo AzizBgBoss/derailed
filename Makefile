@@ -15,20 +15,16 @@ GAME_SUBTITLE	:= By AzizBgBoss
 GAME_ICON    := media/icon.png
 
 GFXDIRS		:= gfx
+AUDIODIRS	:= sfx
+NITROFSDIR	:= nitrofs
 
 # Libraries
-# ---------
 
-ifeq ($(DEBUG),1)
-    DEFINES := -DDSWIFI_LOGS
-    ARM7ELF	:= $(BLOCKSDS)/sys/arm7/main_core/arm7_dswifi_debug.elf
-    LIBS	:= -ldswifi9d_noip -lnds9d
-else
-    ARM7ELF	:= $(BLOCKSDS)/sys/arm7/main_core/arm7_dswifi.elf
-    LIBS	:= -ldswifi9_noip -lnds9
-endif
-
+ARM7ELF	:= $(BLOCKSDS)/sys/arm7/main_core/arm7_dswifi_maxmod.elf
+LIBS	:= -ldswifi9_noip -lnds9 -lmm9
+    
 LIBDIRS		:= $(BLOCKSDS)/libs/dswifi \
-			   $(BLOCKSDS)/libs/libnds
+			   $(BLOCKSDS)/libs/libnds \
+               $(BLOCKSDS)/libs/maxmod
 
 include $(BLOCKSDS)/sys/default_makefiles/rom_arm9/Makefile

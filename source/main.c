@@ -2,6 +2,8 @@
 #include <nds.h>
 #include <time.h>
 #include <dswifi9.h>
+#include <maxmod9.h>
+#include <filesystem.h>
 
 #include "perlin.h"
 
@@ -10,6 +12,8 @@
 #include "player2.h"
 #include "ui.h"
 #include "wagons.h"
+
+#include "soundbank.h"
 
 #define SCREEN_WIDTH 256
 #define SCREEN_HEIGHT 192
@@ -251,6 +255,7 @@ void setWorldHealth(int x, int y, int health)
             bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
             bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
         }
+        mmEffect(SFX_BREAK);
     }
 
     queueUpdate(x, y, ACTION_SETWORLDHEALTH, health);
@@ -640,6 +645,7 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
                     bg0SetTile((x * 2) % 64, y * 2 + 1, tile * 4 + 2 + worldVariants[x][y] * 16 * 4);
                     bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
                 }
+                mmEffect(SFX_BREAK);
             }
             break;
         case ACTION_SETWAGONOBJECT:
@@ -840,10 +846,16 @@ bool AccessPointSelectionMenu(void)
             continue;
 
         if (keys & KEY_UP)
+        {
+            mmEffect(SFX_SELECT);
             chosen--;
+        }
 
         if (keys & KEY_DOWN)
+        {
+            mmEffect(SFX_SELECT);
             chosen++;
+        }
 
         if (chosen < 0)
             chosen = 0;
@@ -895,7 +907,10 @@ bool AccessPointSelectionMenu(void)
         }
 
         if (keys & KEY_A)
+        {
+            mmEffect(SFX_SELECTED);
             return true;
+        }
     }
 
     printf("\x1b[2J");
@@ -964,7 +979,40 @@ bool initClientMode()
 int main(int argc, char **argv)
 {
     srand(time(NULL));
+    consoleDemoInit();
+    if (!nitroFSInit(NULL))
+    {
+        perror("nitroFSInit()");
+        while (1)
+        {
+            swiWaitForVBlank();
+            uint16_t keys = keysDown();
+            if (keys & KEY_START)
+                return 0;
+        }
+    }
+    if (!mmInitDefault("nitro:/soundbank.bin"))
+    {
+        perror("mmInitDefault()");
+        while (1)
+        {
+            swiWaitForVBlank();
+            uint16_t keys = keysDown();
+            if (keys & KEY_START)
+                return 0;
+        }
+    }
+
+    mmLoad(MOD_JOINT_PEOPLE);
+    mmLoadEffect(SFX_SELECT);
+    mmLoadEffect(SFX_SELECTED);
+    mmLoadEffect(SFX_EXPLOSION);
+    mmLoadEffect(SFX_BREAK);
+
 start:
+
+    mmStart(MOD_JOINT_PEOPLE, MM_PLAY_LOOP);
+
     if (Wifi_CheckInit())
     {
         if (Wifi_AssocStatus() == ASSOCSTATUS_ASSOCIATED)
@@ -982,6 +1030,8 @@ start:
     videoSetMode(MODE_0_2D);
 
     vramSetPrimaryBanks(VRAM_A_MAIN_BG, VRAM_B_MAIN_SPRITE, VRAM_C_LCD, VRAM_D_LCD);
+
+    consoleDemoInit();
 
     bg0 = bgInit(0, BgType_Text8bpp, BgSize_T_512x256, 0, 1);
     dmaCopy(tilemapTiles, bgGetGfxPtr(bg0), tilemapTilesLen);
@@ -1092,8 +1142,6 @@ start:
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
 
-    consoleDemoInit();
-
     int selection = 0;
     while (1)
     {
@@ -1133,15 +1181,18 @@ start:
             selection--;
             if (selection < 0)
                 selection = 4;
+            mmEffect(SFX_SELECT);
         }
         if (keysDown() & KEY_DOWN)
         {
             selection++;
             if (selection > 4)
                 selection = 0;
+            mmEffect(SFX_SELECT);
         }
         if (keysDown() & KEY_A)
         {
+            mmEffect(SFX_SELECTED);
             if (selection == 0) // Choose Seed
             {
                 printf("\x1b[4;0HEnter Seed:\nUse arrow keys to change digits, A to confirm\n");
@@ -1168,12 +1219,14 @@ start:
                         selection--;
                         if (selection < 0)
                             selection = 7;
+                        mmEffect(SFX_SELECT);
                     }
                     else if (keysDown() & KEY_RIGHT)
                     {
                         selection++;
                         if (selection > 7)
                             selection = 0;
+                        mmEffect(SFX_SELECT);
                     }
                     else if (keysDown() & (KEY_UP | KEY_DOWN))
                     {
@@ -1187,9 +1240,12 @@ start:
 
                         seed &= ~(0xF << shift);
                         seed |= (digit << shift);
+
+                        mmEffect(SFX_SELECT);
                     }
                     else if (keysDown() & KEY_A)
                     {
+                        mmEffect(SFX_SELECTED);
                         goto generate;
                     }
                 }
@@ -1223,7 +1279,10 @@ start:
                     printf("\n");
 
                     if ((keys_down & KEY_A) && Wifi_MultiplayerGetNumClients() > 0)
+                    {
+                        mmEffect(SFX_SELECTED);
                         break;
+                    }
                     if ((keys_down & KEY_START))
                         goto start;
 
@@ -1300,7 +1359,9 @@ start:
 
 generate:
 
+    mmPause();
     generateWorld(seed);
+    mmResume();
     interact = true;
 
     while (1)
@@ -1659,13 +1720,18 @@ generate:
         {
             if (locomotive.x + locomotive.sizeX + locomotive.speed >= WORLD_WIDTH * TILE_SIZE)
             {
+                printf("\x1b[2J");
                 printf("You won :)\n");
+                mmStop();
                 delay(2);
                 goto start;
             }
             else if (worldObjects[(int)(locomotive.x + locomotive.sizeX + locomotive.speed) / TILE_SIZE][(int)(locomotive.y + locomotive.sizeY) / TILE_SIZE] != OBJECT_RAIL)
             {
+                printf("\x1b[2J");
                 printf("You lost :(\n");
+                mmStop();
+                mmEffect(SFX_EXPLOSION);
                 delay(2);
                 goto start;
             }
