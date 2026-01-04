@@ -258,7 +258,6 @@ void setWorldHealth(int x, int y, int health)
             bg0SetTile((x * 2 + 1) % 64, y * 2 + 1, tile * 4 + 3 + worldVariants[x][y] * 16 * 4);
         }
     }
-    mmEffect(SFX_BREAK);
 
     queueUpdate(x, y, ACTION_SETWORLDHEALTH, health);
 }
@@ -312,7 +311,6 @@ void setPlayerQuantity(int quantity)
         if (player.quantityHeld == 0)
             player.objectHeld = EMPTY;
     }
-    mmEffect(SFX_PICKUP);
 
     queueUpdate(0, 0, ACTION_SETPLAYERQUANTITY, quantity);
 }
@@ -1537,6 +1535,7 @@ generate:
                     if (worldTerrain[((int)player.x + 8) / TILE_SIZE][((int)player.y + 8) / TILE_SIZE - 1] == TILE_ROCK)
                     {
                         setWorldHealth(((int)player.x + 8) / TILE_SIZE, ((int)player.y + 8) / TILE_SIZE - 1, worldHealth[((int)player.x + 8) / TILE_SIZE][((int)player.y + 8) / TILE_SIZE - 1] - 1);
+                        mmEffect(SFX_BREAK);
                     }
                 }
                 else if (player.direction == DIR_DOWN)
@@ -1544,6 +1543,7 @@ generate:
                     if (worldTerrain[((int)player.x + 8) / TILE_SIZE][((int)player.y + 8) / TILE_SIZE + 1] == TILE_ROCK)
                     {
                         setWorldHealth(((int)player.x + 8) / TILE_SIZE, ((int)player.y + 8) / TILE_SIZE + 1, worldHealth[((int)player.x + 8) / TILE_SIZE][((int)player.y + 8) / TILE_SIZE + 1] - 1);
+                        mmEffect(SFX_BREAK);
                     }
                 }
                 else if (player.direction == DIR_LEFT)
@@ -1551,6 +1551,7 @@ generate:
                     if (worldTerrain[((int)player.x + 8) / TILE_SIZE - 1][((int)player.y + 8) / TILE_SIZE] == TILE_ROCK)
                     {
                         setWorldHealth(((int)player.x + 8) / TILE_SIZE - 1, ((int)player.y + 8) / TILE_SIZE, worldHealth[((int)player.x + 8) / TILE_SIZE - 1][((int)player.y + 8) / TILE_SIZE] - 1);
+                        mmEffect(SFX_BREAK);
                     }
                 }
                 else if (player.direction == DIR_RIGHT)
@@ -1558,6 +1559,7 @@ generate:
                     if (worldTerrain[((int)player.x + 8) / TILE_SIZE + 1][((int)player.y + 8) / TILE_SIZE] == TILE_ROCK)
                     {
                         setWorldHealth(((int)player.x + 8) / TILE_SIZE + 1, ((int)player.y + 8) / TILE_SIZE, worldHealth[((int)player.x + 8) / TILE_SIZE + 1][((int)player.y + 8) / TILE_SIZE] - 1);
+                        mmEffect(SFX_BREAK);
                     }
                 }
             }
@@ -1659,6 +1661,7 @@ generate:
         {
             setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
             setPlayerQuantity(player.quantityHeld + 1);
+            mmEffect(SFX_PICKUP);
             if (gameMode == GAMEMODE_CLIENT)
                 interact = false;
         }
@@ -1703,6 +1706,7 @@ generate:
                         int temp = worldObjects[player.selectedObjectX][player.selectedObjectY];
                         setWorldObject(player.selectedObjectX, player.selectedObjectY, player.objectHeld);
                         setPlayerObjectHeld(temp);
+                        mmEffect(SFX_PICKUP);
                         if (gameMode == GAMEMODE_CLIENT)
                             interact = false;
                     }
@@ -1712,6 +1716,7 @@ generate:
                         // Stack object
                         setWorldObject(player.selectedObjectX, player.selectedObjectY, EMPTY);
                         setPlayerQuantity(player.quantityHeld + 1);
+                        mmEffect(SFX_PICKUP);
                         if (gameMode == GAMEMODE_CLIENT)
                             interact = false;
                     }
@@ -1732,6 +1737,7 @@ generate:
                     setPlayerQuantity(temp1);
 
                     updateWagon(player.selectedWagonId);
+                    mmEffect(SFX_PICKUP);
                     if (gameMode == GAMEMODE_CLIENT)
                         interact = false;
                 }
@@ -1743,6 +1749,7 @@ generate:
                     lastPlacedX = player.selectedObjectX;
                     lastPlacedY = player.selectedObjectY;
                     justPlaced = true;
+                    mmEffect(SFX_PICKUP);
                     if (gameMode == GAMEMODE_CLIENT)
                         interact = false;
                 }
@@ -1761,6 +1768,7 @@ generate:
                 setWagonQuantity(player.selectedWagonId, player.selectedWagonSlot, temp1);
                 setPlayerQuantity(temp2);
 
+                mmEffect(SFX_PICKUP);
                 if (gameMode == GAMEMODE_CLIENT)
                     interact = false;
             }
@@ -1773,6 +1781,7 @@ generate:
                 justPlaced = true;
                 lastPlacedX = player.selectedObjectX;
                 lastPlacedY = player.selectedObjectY;
+                mmEffect(SFX_PICKUP);
                 if (gameMode == GAMEMODE_CLIENT)
                     interact = false;
             }
