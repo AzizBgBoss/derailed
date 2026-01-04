@@ -1433,6 +1433,7 @@ generate:
         {
             if (Wifi_MultiplayerGetNumClients() == 0)
             {
+                printf("\x1b[2J");
                 printf("All clients disconnected! Returning to main menu...\n");
                 delay(2);
                 goto start;
