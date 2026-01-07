@@ -488,7 +488,7 @@ void generateWorld(int seed)
     {
         for (int y = 0; y < WORLD_HEIGHT; y++)
         {
-            float noiseValue = fractalPerlin2D((x + WORLD_WIDTH * worldPart) * 0.1f, y * 0.1f, 4, 0.5f, 1.0f, seed);
+            float noiseValue = fractalPerlin2D(x + WORLD_WIDTH * worldPart, y, 4, 0.5f, 0.1f, seed);
             if (noiseValue < -0.15f)
             {
                 setWorldTile(x, y, TILE_ROCK);
@@ -2063,11 +2063,11 @@ generate:
                 dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
             }
 
-            //if (!checkCollision(new2X, player2.y))
+            // if (!checkCollision(new2X, player2.y))
             {
                 player2.x = new2X;
             }
-            //if (!checkCollision(player2.x, new2Y))
+            // if (!checkCollision(player2.x, new2Y))
             {
                 player2.y = new2Y;
             }
@@ -2124,7 +2124,7 @@ generate:
         if ((scroll + SCREEN_WIDTH) / TILE_SIZE >= chunk * 4)
         {
             chunk++;
-            if (chunk < WORLD_WIDTH / 4 - 1)
+            if (chunk < WORLD_WIDTH / 4)
             {
                 for (int x = chunk * 4; x < chunk * 4 + 4; x++)
                 {
