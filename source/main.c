@@ -55,6 +55,8 @@ int len = 0;
 int target = -1;
 int searchStep = SEARCH_IDLE;
 int searchObject = OBJECT_PICKAXE;
+uint8_t bobotEnergy = 100;
+char bobotMessage[128];
 
 struct Update
 {
@@ -324,6 +326,102 @@ const char *getObjectDescription(int object)
     }
 }
 
+const char *acknowledgement[] = {
+    "Okay,",
+    "Got it,",
+    "Yessir,",
+    "Okie dokie!",
+    "Roger that,",
+    "On it,",
+    "Copy that,",
+    "Affirmative,",
+    "As you wish,",
+    "If you insist,",
+};
+
+const char *searching[] = {
+    "I'm looking for the",
+    "Getting the",
+    "Searching for the",
+    "Hunting down the",
+    "Tracking the",
+    "Locating the",
+    "Scanning for the",
+    "Trying to find the",
+};
+
+const char *found[] = {
+    "Found it!",
+    "Target found!",
+    "Found the target!",
+    "Target located!",
+    "Got it!",
+    "I have it!",
+    "Here it is!",
+    "Objective secured!",
+};
+
+const char *returning[] = {
+    "Bringing you the",
+    "I'm coming with the",
+    "Delivering the",
+    "Heading back with the",
+    "On my way with the",
+    "Returning with the",
+};
+
+const char *idle[] = {
+    "Just chilling...",
+    "I'm just chilling...",
+    "I'm bored...",
+    "I wonder what food tastes like...",
+    "You do this for a living?",
+    "Waiting for you to give me another task!",
+    "Standing by...",
+    "Nothing to do but wait...",
+    "Existence is pain.",
+    "Still here.",
+    "I could be optimizing something...",
+    "No tasks detected.",
+};
+
+const char *blocked[] = {
+    "I can't reach that.",
+    "Path is blocked!",
+    "Something's in the way.",
+    "That's not accessible.",
+    "Obstacle detected.",
+    "I fear that I can't get there.",
+};
+
+void setBobotMessage(int type, int object)
+{
+    if (type == SEARCH_SEARCHING)
+    {
+        sprintf(bobotMessage, "%s %s %s...", acknowledgement[rand() % (sizeof(acknowledgement) / sizeof(acknowledgement[0]))], searching[rand() % (sizeof(searching) / sizeof(searching[0]))], getObjectName(object));
+    }
+    else if (type == SEARCH_RETURNING)
+    {
+        sprintf(bobotMessage, "%s %s %s...", found[rand() % (sizeof(found) / sizeof(found[0]))], returning[rand() % (sizeof(returning) / sizeof(returning[0]))], getObjectName(object));
+    }
+    else if (type == SEARCH_IDLE)
+    {
+        sprintf(bobotMessage, "%s", idle[rand() % (sizeof(idle) / sizeof(idle[0]))]);
+    }
+    else if (type == SEARCH_BLOCKED)
+    {
+        sprintf(bobotMessage, "%s", blocked[rand() % (sizeof(blocked) / sizeof(blocked[0]))]);
+    }
+}
+
+void setBobotSearch(int type, int object)
+{
+    searchStep = type;
+    searchObject = object;
+
+    setBobotMessage(type, object);
+}
+
 static inline bool isSolidTerrain(int tx, int ty)
 {
     if (tx < 0 || tx >= WORLD_WIDTH || ty < 0 || ty >= WORLD_HEIGHT)
@@ -391,11 +489,11 @@ void generateWorld(int seed)
         for (int y = 0; y < WORLD_HEIGHT; y++)
         {
             float noiseValue = fractalPerlin2D((x + WORLD_WIDTH * worldPart) * 0.1f, y * 0.1f, 4, 0.5f, 1.0f, seed);
-            if (noiseValue < -0.2f)
+            if (noiseValue < -0.15f)
             {
                 setWorldTile(x, y, TILE_ROCK);
             }
-            else if (noiseValue < 0.2f)
+            else if (noiseValue < 0.15f)
             {
                 setWorldTile(x, y, TILE_EMPTY);
             }
@@ -460,6 +558,11 @@ void generateWorld(int seed)
         updates[i].occupied = false;
     }
 
+    if (temp == GAMEMODE_ASSISTED)
+    {
+        setBobotSearch(SEARCH_IDLE, EMPTY);
+        len = 0;
+    }
     gameMode = temp;
 
     printf("World generation complete\n");
@@ -1016,7 +1119,7 @@ start:
             Wifi_DisconnectAP();
         Wifi_Deinit();
     }
-    gameMode = GAMEMODE_SINGLEPLAYER;
+    gameMode = GAMEMODE_ASSISTED;
     gameStarted = 0;
     gamePlayerMask = 0;
 
@@ -1459,22 +1562,56 @@ generate:
             {
                 int x;
                 int y;
-                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_PICKAXE, isObject, &x, &y))
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_AXE, isObject, &x, &y))
                 {
-                    searchStep = SEARCH_SEARCHING;
-                    searchObject = OBJECT_PICKAXE;
+                    setBobotSearch(SEARCH_SEARCHING, OBJECT_AXE);
                     len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+                else
+                {
+                    setBobotMessage(SEARCH_BLOCKED, searchObject);
                 }
             }
             if (down & KEY_R)
             {
                 int x;
                 int y;
-                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_AXE, isObject, &x, &y))
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_PICKAXE, isObject, &x, &y))
                 {
-                    searchStep = SEARCH_SEARCHING;
-                    searchObject = OBJECT_AXE;
+                    setBobotSearch(SEARCH_SEARCHING, OBJECT_PICKAXE);
                     len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+                else
+                {
+                    setBobotMessage(SEARCH_BLOCKED, searchObject);
+                }
+            }
+            if (down & KEY_Y)
+            {
+                int x;
+                int y;
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_WOOD, isObject, &x, &y))
+                {
+                    setBobotSearch(SEARCH_SEARCHING, OBJECT_WOOD);
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+                else
+                {
+                    setBobotMessage(SEARCH_BLOCKED, searchObject);
+                }
+            }
+            if (down & KEY_X)
+            {
+                int x;
+                int y;
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_IRON, isObject, &x, &y))
+                {
+                    setBobotSearch(SEARCH_SEARCHING, OBJECT_IRON);
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+                else
+                {
+                    setBobotMessage(SEARCH_BLOCKED, searchObject);
                 }
             }
         }
@@ -1887,40 +2024,6 @@ generate:
             else
                 target = -1;
 
-            if (searchStep == SEARCH_SEARCHING)
-            {
-                if (len == 0) // Found trouble, retry
-                {
-                    int x;
-                    int y;
-                    if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject, isObject, &x, &y))
-                    {
-                        len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
-                    } else {
-                        searchStep = SEARCH_IDLE;
-                    }
-                }
-                if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == searchObject)
-                {
-                    setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), EMPTY);
-                    searchStep = SEARCH_RETURNING;
-                }
-            }
-            else if (searchStep == SEARCH_RETURNING) // Found target, go back to player
-            {
-                if (len == 0)
-                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), PX_TO_TILE((int)player.x), PX_TO_TILE((int)player.y), path, sizeof(path) / sizeof(int));
-
-                if (PX_TO_TILE((int)player2.x) == PX_TO_TILE((int)player.x) && PX_TO_TILE((int)player2.y) == PX_TO_TILE((int)player.y))
-                {
-                    if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == EMPTY)
-                    {
-                        setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject);
-                        searchStep = SEARCH_IDLE;
-                    }
-                }
-            }
-
             int new2X = player2.x;
             int new2Y = player2.y;
 
@@ -1960,20 +2063,60 @@ generate:
                 dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
             }
 
-            if (!checkCollision(new2X, player2.y))
+            //if (!checkCollision(new2X, player2.y))
             {
                 player2.x = new2X;
             }
-            if (!checkCollision(player2.x, new2Y))
+            //if (!checkCollision(player2.x, new2Y))
             {
                 player2.y = new2Y;
             }
         }
 
-        if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2)
+        if (gameMode == GAMEMODE_ASSISTED && frames % 60 == 0)
+        {
+            if (searchStep == SEARCH_SEARCHING)
+            {
+                if (len == 0) // Found trouble, retry
+                {
+                    int x;
+                    int y;
+                    if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject, isObject, &x, &y))
+                    {
+                        len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                    }
+                    else
+                    {
+                        setBobotSearch(SEARCH_IDLE, searchObject);
+                    }
+                }
+                if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == searchObject)
+                {
+                    setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), EMPTY);
+                    setBobotSearch(SEARCH_RETURNING, searchObject);
+                }
+            }
+            else if (searchStep == SEARCH_RETURNING) // Found target, go back to player
+            {
+                if (len == 0)
+                {
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), PX_TO_TILE((int)player.x + TILE_SIZE / 2), PX_TO_TILE((int)player.y + TILE_SIZE / 2), path, sizeof(path) / sizeof(int));
+                }
+                if (PX_TO_TILE((int)player2.x) == PX_TO_TILE((int)player.x + TILE_SIZE / 2) && PX_TO_TILE((int)player2.y) == PX_TO_TILE((int)player.y + TILE_SIZE / 2))
+                {
+                    if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == EMPTY)
+                    {
+                        setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject);
+                        setBobotSearch(SEARCH_IDLE, searchObject);
+                    }
+                }
+            }
+        }
+
+        if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH + 32 * 3)
             scroll = WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH;
-        else if (locomotive.x + locomotive.sizeX >= SCREEN_WIDTH / 2)
-            scroll = locomotive.x + locomotive.sizeX - SCREEN_WIDTH / 2;
+        else if (locomotive.x + locomotive.sizeX >= 32 * 3)
+            scroll = locomotive.x + locomotive.sizeX - 32 * 3;
         else
             scroll = 0;
 
@@ -2064,24 +2207,22 @@ generate:
         {
             if (gameMode == GAMEMODE_ASSISTED)
             {
-                printf("Bobot: ");
-                if (searchStep == SEARCH_IDLE)
-                    printf("Hey Peanut, give me something to do!\n");
-                else if (searchStep == SEARCH_SEARCHING)
-                    printf("Getting the %s!\n", getObjectName(searchObject));
-                else if (searchStep == SEARCH_RETURNING)
-                    printf("Found the %s! I'm coming to you...\n", getObjectName(searchObject));
+                consoleSetColor(NULL, CONSOLE_GRAY);
+                printf("Bobot: %s\n\n", bobotMessage);
             }
             if (player.objectHeld != EMPTY)
             {
+                consoleSetColor(NULL, CONSOLE_LIGHT_BLUE);
                 if (player.objectHeld != OBJECT_AXE && player.objectHeld != OBJECT_PICKAXE)
                     printf("Holding: %s x %d\n\n", getObjectName(player.objectHeld), player.quantityHeld);
                 else
                     printf("Holding: %s\n\n", getObjectName(player.objectHeld));
 
+                consoleSetColor(NULL, CONSOLE_BLUE);
                 printf("%s\n", getObjectDescription(player.objectHeld));
             }
 
+            consoleSetColor(NULL, CONSOLE_BLACK);
             if (gameMode == GAMEMODE_HOST)
                 printf("\x1b[23;0HHost Mode");
             else if (gameMode == GAMEMODE_CLIENT)
@@ -2120,6 +2261,8 @@ generate:
 
             printf("Press SELECT to disable debug mode\n");
         }
+
+        consoleSetColor(NULL, CONSOLE_RED);
 
         frames++;
     }

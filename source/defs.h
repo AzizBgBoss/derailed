@@ -37,6 +37,7 @@
 #define SEARCH_IDLE 0
 #define SEARCH_SEARCHING 1
 #define SEARCH_RETURNING 2
+#define SEARCH_BLOCKED 3
 
 #define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
