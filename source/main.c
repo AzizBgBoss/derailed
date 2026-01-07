@@ -5,54 +5,19 @@
 #include <maxmod9.h>
 #include <filesystem.h>
 
+#include "defs.h"
 #include "perlin.h"
+#include "pathfinder.h"
 
 #include "tilemap.h"
 #include "player.h"
 #include "player2.h"
+#include "robot.h"
 #include "ui.h"
 #include "wagons.h"
 #include "intro.h"
 
 #include "soundbank.h"
-
-#define SCREEN_WIDTH 256
-#define SCREEN_HEIGHT 192
-
-#define WORLD_WIDTH 64
-#define WORLD_HEIGHT 12
-#define TILE_SIZE 16
-#define PLAYER_SIZE 16
-
-#define EMPTY 0
-#define TILE_EMPTY 1
-#define TILE_TREE 2
-#define TILE_ROCK 3
-#define OBJECT_RAIL 8
-#define OBJECT_WOOD 9
-#define OBJECT_IRON 10
-#define OBJECT_AXE 11
-#define OBJECT_PICKAXE 12
-
-#define DIR_DOWN 0
-#define DIR_LEFT 1
-#define DIR_RIGHT 2
-#define DIR_UP 3
-
-#define GAMEMODE_SINGLEPLAYER 0
-#define GAMEMODE_HOST 1
-#define GAMEMODE_CLIENT 2
-
-#define ACTION_SETWORLDTERRAIN 0
-#define ACTION_SETWORLDOBJECT 1
-#define ACTION_SETWORLDHEALTH 2
-#define ACTION_SETWAGONOBJECT 3
-#define ACTION_SETWAGONQUANTITY 4
-#define ACTION_SETPLAYEROBJECTHELD 5
-#define ACTION_SETPLAYERQUANTITY 6
-
-#define MAX_CLIENTS 1 // Keep it 2 players max, for now
-#define MAX_UPDATES 16
 
 // TODO: My code is not clean, i need to get rid of repeated expressions and split the code into functions
 // There's also a lot of magic numbers, i need to define them
@@ -84,6 +49,12 @@ int lastPlacedY;
 bool justPlaced;
 
 bool interact;
+
+int path[32];
+int len = 0;
+int target = -1;
+int searchStep = SEARCH_IDLE;
+int searchObject = OBJECT_PICKAXE;
 
 struct Update
 {
@@ -459,6 +430,14 @@ void generateWorld(int seed)
 
     if (temp == GAMEMODE_HOST)
     {
+        player2.objectHeld = EMPTY;
+        player2.quantityHeld = 0;
+    }
+    else if (temp == GAMEMODE_ASSISTED)
+    {
+        player2.x = TILE_SIZE * 5;
+        player2.y = TILE_SIZE * 6;
+        player2.direction = DIR_DOWN;
         player2.objectHeld = EMPTY;
         player2.quantityHeld = 0;
     }
@@ -985,6 +964,13 @@ bool initClientMode()
     return true;
 }
 
+bool isObject(int x, int y, int object)
+{
+    return worldObjects[x][y] == object;
+}
+
+#define MAINMENU_CHOICES 7
+
 int main(int argc, char **argv)
 {
     srand(time(NULL));
@@ -1063,7 +1049,7 @@ start:
         scanKeys();
 
         printf("\x1b[2J");
-        for (int i = 0; i < 6; i++)
+        for (int i = 0; i < MAINMENU_CHOICES; i++)
         {
             if (i == selection)
                 printf("\x1b[%d;0H> ", i);
@@ -1089,6 +1075,12 @@ start:
             case 5:
                 printf("Exit Game\n");
                 break;
+            case 6:
+                printf("Assisted mode (robot): %s\n", gameMode == GAMEMODE_ASSISTED ? "ON" : "OFF");
+                break;
+            default:
+                printf("???\n");
+                break;
             }
         }
 
@@ -1096,13 +1088,13 @@ start:
         {
             selection--;
             if (selection < 0)
-                selection = 5;
+                selection = MAINMENU_CHOICES - 1;
             mmEffect(SFX_SELECT);
         }
         if (keysDown() & KEY_DOWN)
         {
             selection++;
-            if (selection > 5)
+            if (selection > MAINMENU_CHOICES - 1)
                 selection = 0;
             mmEffect(SFX_SELECT);
         }
@@ -1303,6 +1295,10 @@ Press START to go back.\n",
                     }
                 }
             }
+            else if (selection == 6) // Assisted mode
+            {
+                gameMode = gameMode == GAMEMODE_ASSISTED ? GAMEMODE_SINGLEPLAYER : GAMEMODE_ASSISTED;
+            }
             else // Exit Game
                 return 0;
         }
@@ -1343,7 +1339,10 @@ generate:
     railBuilder.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles + 8 * 8 * 2 * 2, railBuilder.gfx, 8 * 8 * 4 * 2);
     player2.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-    dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    if (gameMode == GAMEMODE_ASSISTED)
+        dmaCopy(robotTiles, player2.gfx, 8 * 8 * 4);
+    else
+        dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
 
     // Copy palette
     dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
@@ -1453,6 +1452,32 @@ generate:
             goto start;
         if (down & KEY_SELECT)
             debugMode = !debugMode;
+
+        if (gameMode == GAMEMODE_ASSISTED && searchStep == SEARCH_IDLE)
+        {
+            if (down & KEY_L)
+            {
+                int x;
+                int y;
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_PICKAXE, isObject, &x, &y))
+                {
+                    searchStep = SEARCH_SEARCHING;
+                    searchObject = OBJECT_PICKAXE;
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+            }
+            if (down & KEY_R)
+            {
+                int x;
+                int y;
+                if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), OBJECT_AXE, isObject, &x, &y))
+                {
+                    searchStep = SEARCH_SEARCHING;
+                    searchObject = OBJECT_AXE;
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                }
+            }
+        }
 
         int newX = player.x;
         int newY = player.y;
@@ -1831,6 +1856,120 @@ generate:
         railBuilder.x = railStorage.x - railBuilder.sizeX;
         railBuilder.y = railStorage.y;
 
+        // Robot intelligence
+        if (gameMode == GAMEMODE_ASSISTED && frames % 2 == 0)
+        {
+            // Pathfinding, shit
+            int targetX = 0;
+            int targetY = 0;
+
+            if (len > 0)
+            {
+                if (target == -1)
+                {
+                    target = 0;
+                }
+
+                if (player2.x == TILE_TO_PX(pf_node_x(path[target])) && player2.y == TILE_TO_PX(pf_node_y(path[target])))
+                {
+                    target++;
+                }
+
+                if (target >= len)
+                {
+                    target = -1;
+                    len = 0;
+                }
+
+                targetX = TILE_TO_PX(pf_node_x(path[target]));
+                targetY = TILE_TO_PX(pf_node_y(path[target]));
+            }
+            else
+                target = -1;
+
+            if (searchStep == SEARCH_SEARCHING)
+            {
+                if (len == 0) // Found trouble, retry
+                {
+                    int x;
+                    int y;
+                    if (find_closest_object(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject, isObject, &x, &y))
+                    {
+                        len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), x, y, path, sizeof(path) / sizeof(int));
+                    } else {
+                        searchStep = SEARCH_IDLE;
+                    }
+                }
+                if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == searchObject)
+                {
+                    setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), EMPTY);
+                    searchStep = SEARCH_RETURNING;
+                }
+            }
+            else if (searchStep == SEARCH_RETURNING) // Found target, go back to player
+            {
+                if (len == 0)
+                    len = pf_find_path(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), PX_TO_TILE((int)player.x), PX_TO_TILE((int)player.y), path, sizeof(path) / sizeof(int));
+
+                if (PX_TO_TILE((int)player2.x) == PX_TO_TILE((int)player.x) && PX_TO_TILE((int)player2.y) == PX_TO_TILE((int)player.y))
+                {
+                    if (worldObjects[PX_TO_TILE((int)player2.x)][PX_TO_TILE((int)player2.y)] == EMPTY)
+                    {
+                        setWorldObject(PX_TO_TILE((int)player2.x), PX_TO_TILE((int)player2.y), searchObject);
+                        searchStep = SEARCH_IDLE;
+                    }
+                }
+            }
+
+            int new2X = player2.x;
+            int new2Y = player2.y;
+
+            if (target != -1)
+            {
+                if (player2.x > targetX)
+                {
+                    new2X--;
+                    player2.direction = DIR_LEFT;
+                }
+                else if (player2.x < targetX)
+                {
+                    new2X++;
+                    player2.direction = DIR_RIGHT;
+                }
+                if (player2.y > targetY)
+                {
+                    new2Y--;
+                    player2.direction = DIR_UP;
+                }
+                else if (player2.y < targetY)
+                {
+                    new2Y++;
+                    player2.direction = DIR_DOWN;
+                }
+            }
+
+            if (new2X == player2.x && new2Y == player2.y)
+            {
+                player2.animationFrame = 0;
+                dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction, player2.gfx, 8 * 8 * 4);
+            }
+            else
+            {
+                if (frames % 10 == 0)
+                    player2.animationFrame = (player2.animationFrame + 1) % 4;
+                dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+            }
+
+            if (!checkCollision(new2X, player2.y))
+            {
+                player2.x = new2X;
+            }
+            if (!checkCollision(player2.x, new2Y))
+            {
+                player2.y = new2Y;
+            }
+        }
+
         if (locomotive.x + locomotive.sizeX >= WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH / 2)
             scroll = WORLD_WIDTH * TILE_SIZE - SCREEN_WIDTH;
         else if (locomotive.x + locomotive.sizeX >= SCREEN_WIDTH / 2)
@@ -1887,12 +2026,18 @@ generate:
 
         if (gameMode != GAMEMODE_SINGLEPLAYER)
         {
-            if (gamePlayerMask & BIT(1))
+            if (gamePlayerMask & BIT(1) || gameMode == GAMEMODE_ASSISTED)
             {
                 if (player2.x >= scroll - TILE_SIZE && player2.x < scroll + SCREEN_WIDTH)
                 {
                     oamSetXY(&oamMain, 5, player2.x - scroll, player2.y);
-                    dmaCopy(((gameMode == GAMEMODE_CLIENT) ? playerTiles : player2Tiles) + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+
+                    if (gameMode == GAMEMODE_HOST)
+                        dmaCopy(player2Tiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+                    else if (gameMode == GAMEMODE_CLIENT)
+                        dmaCopy(playerTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+                    else if (gameMode == GAMEMODE_ASSISTED)
+                        dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                 }
                 else
                     oamSetXY(&oamMain, 5, -16, -16);
@@ -1917,6 +2062,16 @@ generate:
 
         if (!debugMode)
         {
+            if (gameMode == GAMEMODE_ASSISTED)
+            {
+                printf("Bobot: ");
+                if (searchStep == SEARCH_IDLE)
+                    printf("Hey Peanut, give me something to do!\n");
+                else if (searchStep == SEARCH_SEARCHING)
+                    printf("Getting the %s!\n", getObjectName(searchObject));
+                else if (searchStep == SEARCH_RETURNING)
+                    printf("Found the %s! I'm coming to you...\n", getObjectName(searchObject));
+            }
             if (player.objectHeld != EMPTY)
             {
                 if (player.objectHeld != OBJECT_AXE && player.objectHeld != OBJECT_PICKAXE)
@@ -1929,6 +2084,10 @@ generate:
 
             if (gameMode == GAMEMODE_HOST)
                 printf("\x1b[23;0HHost Mode");
+            else if (gameMode == GAMEMODE_CLIENT)
+                printf("\x1b[23;0HClient Mode");
+            else if (gameMode == GAMEMODE_ASSISTED)
+                printf("\x1b[23;0HAssisted Mode");
         }
         else
         {
