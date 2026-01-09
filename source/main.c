@@ -5,9 +5,8 @@
 #include <maxmod9.h>
 #include <filesystem.h>
 
-#include "defs.h"
 #include "perlin.h"
-#include "pathfinder.h"
+#include "pathfinder.h" // "defs.h" is included here
 
 #include "tilemap.h"
 #include "player.h"
@@ -506,22 +505,22 @@ void generateWorld(int seed)
 
     for (int x = 0; x < 8; x++)
     {
-        setWorldTile(x, 5, TILE_EMPTY);
-        setWorldObject(x, 5, OBJECT_RAIL);
-        setWorldTile(x, 6, TILE_EMPTY);
+        setWorldTile(x, RAILS_Y, TILE_EMPTY);
+        setWorldObject(x, RAILS_Y, OBJECT_RAIL);
+        setWorldTile(x, RAILS_Y + 1, TILE_EMPTY);
     }
 
-    setWorldObject(0, 6, OBJECT_WOOD);
-    setWorldObject(1, 6, OBJECT_WOOD);
-    setWorldObject(2, 6, OBJECT_IRON);
-    setWorldObject(3, 6, OBJECT_IRON);
-    setWorldObject(4, 6, OBJECT_AXE);
-    setWorldObject(5, 6, OBJECT_PICKAXE);
+    setWorldObject(0, RAILS_Y + 1, OBJECT_WOOD);
+    setWorldObject(1, RAILS_Y + 1, OBJECT_WOOD);
+    setWorldObject(2, RAILS_Y + 1, OBJECT_IRON);
+    setWorldObject(3, RAILS_Y + 1, OBJECT_IRON);
+    setWorldObject(4, RAILS_Y + 1, OBJECT_AXE);
+    setWorldObject(5, RAILS_Y + 1, OBJECT_PICKAXE);
 
     chunk = -1;
 
     player.x = TILE_SIZE * 4;
-    player.y = TILE_SIZE * 6;
+    player.y = TILE_SIZE * (RAILS_Y + 1);
     player.direction = DIR_DOWN;
     player.objectHeld = EMPTY;
     player.quantityHeld = 0;
@@ -534,7 +533,7 @@ void generateWorld(int seed)
     else if (temp == GAMEMODE_ASSISTED)
     {
         player2.x = TILE_SIZE * 5;
-        player2.y = TILE_SIZE * 6;
+        player2.y = TILE_SIZE * (RAILS_Y + 1);
         player2.direction = DIR_DOWN;
         player2.objectHeld = EMPTY;
         player2.quantityHeld = 0;
@@ -550,7 +549,7 @@ void generateWorld(int seed)
     }
 
     locomotive.x = 32;
-    locomotive.y = 4.8 * TILE_SIZE;
+    locomotive.y = (RAILS_Y - 0.2) * TILE_SIZE; // To center on the rails
 
     // Clean up updates cuz the client will generate by himself
     for (int i = 0; i < MAX_UPDATES; i++)
@@ -1840,14 +1839,15 @@ generate:
                 //   x
                 // x R x      Check these tiles and make sure the rail isnt intermediate between two other rails
                 //   x        if it is, then it is not selected
-                if ((player.selectedObjectX >= locomotive.x / TILE_SIZE &&
+                if (((player.selectedObjectX >= locomotive.x / TILE_SIZE &&
                      player.selectedObjectX <= (locomotive.x + locomotive.sizeX) / TILE_SIZE) ||
 
                     (player.selectedObjectX == 0 &&
                      worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL) ||
 
                     (worldObjects[player.selectedObjectX - 1][player.selectedObjectY] == OBJECT_RAIL &&
-                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL))
+                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL)) &&
+                    player.selectedObjectY == RAILS_Y)
 
                     player.selectedObject = false;
                 else
