@@ -1368,6 +1368,7 @@ start:
             {
                 printf("\x1b[2J");
                 printf("Derailed!\n\
+Version: %s\n\
 https://github.com/AzizBgBoss/derailed/\n\
 Commit %s\n\
 \n\
@@ -1383,6 +1384,7 @@ And you for trying Derailed! out\n\
 Try other DS games at https://github.com/AzizBgBoss/\n\
 \n\
 Press START to go back.\n",
+                       VERSION,
                        COMMIT_HASH);
                 while (1)
                 {

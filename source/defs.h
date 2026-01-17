@@ -1,3 +1,5 @@
+#define VERSION "1.0"
+
 #define SCREEN_WIDTH 256
 #define SCREEN_HEIGHT 192
 
