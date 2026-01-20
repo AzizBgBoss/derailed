@@ -32,6 +32,7 @@ You can either compile the game yourself (for nightly releases) or check for sta
 ![QR](media/frame.png)
 
 ## Gameplay:
+Check tutorial on main menu.
 - D-Pad: Move
 - A: Pick up item / Put item
 - L: Command Bobot to bring the axe.
