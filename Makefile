@@ -12,6 +12,8 @@ BLOCKSDS	?= /opt/blocksds/core
 NAME 		:= derailed
 GAME_TITLE	:= Derailed
 GAME_SUBTITLE	:= By AzizBgBoss
+GAME_AUTHOR	:= github.com/AzizBgBoss/derailed
+
 GAME_ICON    := media/icon.png
 
 GFXDIRS		:= gfx

@@ -15,6 +15,7 @@
 #include "ui.h"
 #include "wagons.h"
 #include "intro.h"
+#include "tutorial.h"
 
 #include "soundbank.h"
 
@@ -1071,7 +1072,47 @@ bool isObject(int x, int y, int object)
     return worldObjects[x][y] == object;
 }
 
-#define MAINMENU_CHOICES 7
+const char *tutorialText[TUTORIAL_LENGTH] = {
+    "Hello player! Thanks for trying out this game!\n\n\
+This is a simple game where you have to keep a train running.\n\n\
+Before we start, note that I've included a gameplay video in the GitHub page at https://github.com/AzizBgBoss/derailed/ in case you didn't understand the gameplay mechanics.\n",
+    "The outstanding young man below the arrow is you, you can use the D-PAD to move around.\n",
+    "This is the train, the one you should keep from derailing.\n",
+    "To keep the train running, you need to make rails and extend the railway until you reach the end of the map (progress will be indicated in the lower screen).\n",
+    "This is an axe. You need to walk over it to get it. When it gets highlighted by a yellow box, press A to pick it up.\n",
+    "On the lower screen, you'll always see the item you're holding and its description.\n\n\
+If you want to drop the item you're holding, press A again above an empty space (or over another item to swap it with the one you're holding, make sure you only have ONE item and no more to swap).\n\n\
+Now that we have the axe, stand facing a tree and stay still until it breaks, you'll see the tree getting smaller and smaller.\n",
+    "After waiting long enough, the tree will break, and will drop a piece of wood.\n\
+Pick up the piece of wood the same way you did with the axe.\n",
+    "After picking it up, head over to the right half of the storage wagon.\n\
+The storage wagon is a compartment where you can store wood and iron to make rails.\n\
+It will get highlighted with a yellow box, that means you can press A to put the pieces of wood there.\n\
+Notice that the 2 pieces of wood on the left part of the screen disappeared, that's because I just walked over them and the player automatically picked them up. He does so as long as you're holding the same item you're walking over. Your maximum capacity is 3 items.\n",
+    "You need to do the same thing with iron.\n\n\
+Use the pickaxe, stand facing a rock and wait for it to break.\n\n\
+The rock will break, and will drop a piece of iron.\n\n\
+Pick up the piece of iron the same way you did with the wood.\n\n\
+After picking it up, head over to the left half of the storage wagon.\n",
+    "Now that there's at least 1 piece of wood and 1 piece of iron in the storage wagon, the building wagon behind it will start making rails.\n\n\
+Head over to the left half of the building wagon. Once it gets highlighted, press A to take the rails.\n",
+    "Now that you have at least one rail in your inventory, you can extend the railway by walking over the empty space next to the railway and pressing A to place it.\n\
+Letting the train exceed the railway will result in derailing it, breaking it, exploding it, destroying the whole multiverse, and of course, losing.\n",
+    "The gray person you see next to you is a robot called Bobot, he will help you in the game.\n\
+Bobot is completely optional and you can choose to disable him in the main menu (assisted mode).\n\
+You can command him by:\n\n\
+L: Bring the axe.\n\
+R: Bring the pickaxe.\n\
+Y: Bring the nearest wood.\n\
+X: Bring the nearest iron.\n",
+    "This is it! Again, thanks for trying out this game!\n\n\
+And remember, if you still didn't understand the game:\n\n\
+- Open this tutorial again through the main menu.\n\
+- Check the video included in the GitHub page at https://github.com/AzizBgBoss/derailed/.\n\
+- Join the Discord server included in the GitHub page and ask me there whatever you want!\n\
+- Or just start a game and go for it and you'll eventually learn how to play with trial and error.\n\n\
+You can do it!",
+};
 
 int main(int argc, char **argv)
 {
@@ -1154,9 +1195,9 @@ start:
         for (int i = 0; i < MAINMENU_CHOICES; i++)
         {
             if (i == selection)
-                printf("\x1b[%d;0H> ", i);
+                printf("\x1b[%d;0H> ", i * 2 + 1);
             else
-                printf("\x1b[%d;0H  ", i);
+                printf("\x1b[%d;0H  ", i * 2 + 1);
             switch (i)
             {
             case 0:
@@ -1179,6 +1220,9 @@ start:
                 break;
             case 6:
                 printf("Assisted mode (robot): %s\n", gameMode == GAMEMODE_ASSISTED ? "ON" : "OFF");
+                break;
+            case 7:
+                printf("Tutorial");
                 break;
             default:
                 printf("???\n");
@@ -1402,6 +1446,37 @@ Press START to go back.\n",
             else if (selection == 6) // Assisted mode
             {
                 gameMode = gameMode == GAMEMODE_ASSISTED ? GAMEMODE_SINGLEPLAYER : GAMEMODE_ASSISTED;
+            }
+            else if (selection == 7) // Tutorial
+            {
+                // This feels inefficient, and I have to fucking change the tutorial map every time I change the art
+                // but well fuck it, it works for now
+                dmaCopy(tutorialTiles, bgGetGfxPtr(bg0), tutorialTilesLen);
+                dmaCopy(tutorialPal, BG_PALETTE, tutorialPalLen);
+
+                for (int i = 0; i < TUTORIAL_LENGTH; i++)
+                {
+                    dmaCopy(tutorialMap + i * 32 * 24, bgGetMapPtr(bg0), 32 * 24 * 2);
+                    printf("\x1b[2J");
+                    consoleSetColor(NULL, CONSOLE_BLACK);
+                    printf("Tutorial: %d/%d - Press A to continue\n\n", i + 1, TUTORIAL_LENGTH);
+                    consoleSetColor(NULL, CONSOLE_RED);
+                    printf(tutorialText[i]);
+
+                    while (1)
+                    {
+                        swiWaitForVBlank();
+
+                        scanKeys();
+
+                        u16 keys_down = keysDown();
+                        if (keys_down & KEY_A)
+                        {
+                            break;
+                        }
+                    }
+                }
+                goto start;
             }
             else // Exit Game
                 return 0;
@@ -1842,13 +1917,13 @@ generate:
                 // x R x      Check these tiles and make sure the rail isnt intermediate between two other rails
                 //   x        if it is, then it is not selected
                 if (((player.selectedObjectX >= locomotive.x / TILE_SIZE &&
-                     player.selectedObjectX <= (locomotive.x + locomotive.sizeX) / TILE_SIZE) ||
+                      player.selectedObjectX <= (locomotive.x + locomotive.sizeX) / TILE_SIZE) ||
 
-                    (player.selectedObjectX == 0 &&
-                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL) ||
+                     (player.selectedObjectX == 0 &&
+                      worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL) ||
 
-                    (worldObjects[player.selectedObjectX - 1][player.selectedObjectY] == OBJECT_RAIL &&
-                     worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL)) &&
+                     (worldObjects[player.selectedObjectX - 1][player.selectedObjectY] == OBJECT_RAIL &&
+                      worldObjects[player.selectedObjectX + 1][player.selectedObjectY] == OBJECT_RAIL)) &&
                     player.selectedObjectY == RAILS_Y)
 
                     player.selectedObject = false;

@@ -12,6 +12,10 @@
 #define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
 
+#define MAINMENU_CHOICES 8
+
+#define TUTORIAL_LENGTH 13
+
 enum Objects
 {
     EMPTY,
