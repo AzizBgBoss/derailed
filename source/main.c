@@ -645,6 +645,10 @@ void SendHostStateToClients(void)
     Wifi_MultiplayerHostCmdTxFrame(&host_packet, sizeof(host_packet));
 }
 
+// Save information received from the client into the global state struct
+pkt_host_to_client packet;
+bool receivedPacket = false;
+
 void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
 {
     if (len < sizeof(pkt_host_to_client))
@@ -656,10 +660,12 @@ void FromHostPacketHandler(Wifi_MPPacketType type, int base, int len)
     if (type != WIFI_MPTYPE_CMD)
         return;
 
-    // Save information received from the client into the global state struct
-    pkt_host_to_client packet;
     Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
+    receivedPacket = true;
+}
 
+void handleHostPacket(pkt_host_to_client packet)
+{
     player2.x = packet.playerHost.x;
     player2.y = packet.playerHost.y;
     player2.direction = packet.playerHost.direction;
@@ -820,6 +826,9 @@ void SendClientStateToHost(void)
     Wifi_MultiplayerClientReplyTxFrame(&packet, sizeof(packet));
 }
 
+// Save information received from the client into the global state struct
+pkt_client_to_host packet_;
+
 void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
 {
     if (len < sizeof(pkt_client_to_host))
@@ -830,11 +839,15 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
 
     if (type != WIFI_MPTYPE_REPLY)
         return;
+    Wifi_RxRawReadPacket(base, sizeof(packet_), (void *)&packet_);
 
-    // Save information received from the client into the global state struct
-    pkt_client_to_host packet;
-    Wifi_RxRawReadPacket(base, sizeof(packet), (void *)&packet);
+    gamePlayerMask |= BIT(aid);
 
+    receivedPacket = true;
+}
+
+void handleClientPacket(pkt_client_to_host packet)
+{
     player2.x = packet.x;
     player2.y = packet.y;
     player2.direction = packet.direction;
@@ -886,8 +899,6 @@ void FromClientPacketHandler(Wifi_MPPacketType type, int aid, int base, int len)
         break;
         }
     }
-
-    gamePlayerMask |= BIT(aid);
 }
 
 void initHostMode()
@@ -1400,6 +1411,12 @@ start:
                     {
                         goto start;
                     }
+
+                    if (receivedPacket)
+                    {
+                        receivedPacket = false;
+                        handleHostPacket(packet);
+                    }
                 }
                 gameMode = GAMEMODE_CLIENT;
 
@@ -1617,10 +1634,20 @@ generate:
                 goto start;
             }
             SendHostStateToClients();
+            if (receivedPacket)
+            {
+                receivedPacket = false;
+                handleClientPacket(packet_);
+            }
         }
         else if (gameMode == GAMEMODE_CLIENT)
         {
             SendClientStateToHost();
+            if (receivedPacket)
+            {
+                receivedPacket = false;
+                handleHostPacket(packet);
+            }
         }
 
         scanKeys();

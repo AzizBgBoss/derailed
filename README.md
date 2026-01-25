@@ -22,10 +22,10 @@ You can either compile the game yourself (for nightly releases) or check for sta
 ### Tested devices:
 | System                           | Functionality             | Cons                  | Notes                                                                                                       |
 |----------------------------------|---------------------------|-----------------------|-------------------------------------------------------------------------------------------------------------|
-| Nintendo DSi (XL) (TM++)         | Excellent                 | None                  | None                                                                 |
-| Nintendo 3DS (New) (XL) (TM++)   | Excellent                 | None                  | Should work fine as long as you're using TW++ since it basically becomes a DSi at that point.|
+| Nintendo DSi (XL) (TM++)         | Good                      | Laggy multiplayer     | None                                                                 |
+| Nintendo 3DS (New) (XL) (TM++)   | Good                      | Laggy multiplayer     | Should work fine as long as you're using TW++ since it basically becomes a DSi at that point.|
 | Flashcarts (DS/DS Lite/DSi)      | Not tested yet            | Not tested yet        | There is no saving in the game for now so it should work even without a DLDI patch. |
-| melonDS (Windows Emulator)       | Good            | Laggy multiplayer              | For some reason, after a certain amount of local multiplayer the host starts lagging (5 fps) and the client doesn't update anymore. |
+| melonDS (Windows Emulator)       | Good                      | Laggy multiplayer     | None          |
 
 ## Download the latest version (QR code scannable with DSi Downloader)
 
