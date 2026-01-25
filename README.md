@@ -1,7 +1,7 @@
 ![Derailed Logo](media/banner.png)<br>
 [![Downloads](https://img.shields.io/github/downloads/AzizBgBoss/derailed/total.svg?label=Download)](https://github.com/AzizBgBoss/derailed/releases)
 # Derailed!
-A game inspired by Unrailed! for the DS by AzizBgBoss.<br>
+A game inspired by Unrailed! for the DS by AzizBgBoss, about keeping a train running.<br>
 
 I bought the Unrailed! game for my switch some years ago, and got obsessed with the game. And after I learned a lot about programming on the DS when making [TerrariaDS](https://github.com/AzizBgBoss/TerrariaDS), I decided to make a DS version of it, because I love the DS too lol.<br>
 <br>
