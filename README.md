@@ -15,6 +15,7 @@ This project is not affiliated with Unrailed! or Indoor Astronaut. It is a fan-m
 ### Notes:
 - The local multiplayer mode is unpolished, but I'm working to fix it.
 - I'm thinking about porting the game to many other consoles and add an Online Multiplayer mode with cross-play (apart from the GBA, yeah there will be no online multiplayer).
+- I finally added a tutorial for the game. It's not very good yet, but I'm working to make it better. I did it since many people had problems learning how to play [TerrariaDS](https://github.com/AzizBgBoss/TerrariaDS).
 
 ## Installation:
 You can either compile the game yourself (for nightly releases) or check for stable releases in the Releases page. Please check the Tested devices part before starting.
