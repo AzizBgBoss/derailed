@@ -54,6 +54,7 @@ Initial commit with basic project structure.
 ### Version 1.1 (Soon):
 - Added a pause menu.
 - Better looking UI.
+- Fix the multiplayer bugs.
 
 ## Planned Features for the future:
 - Online multiplayer with hostable servers.
