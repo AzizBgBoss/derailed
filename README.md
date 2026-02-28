@@ -52,7 +52,8 @@ Initial commit with basic project structure.
 - Local multiplayer. ***(done but buggy)***
 - Added Bobot, your (optional) assistant robot. ***(done)***
 
-### Version 1.1 (Soon):
+### Version 1.1 (Working on it):
+- Reimagine the art.
 - Added a pause menu.
 - Better looking UI.
 - Fix the multiplayer bugs.
@@ -90,6 +91,7 @@ This will create a `derailed.nds` file in the root directory of the project.
 - AzizBgBoss for making the game.
 - AntonioND for making the BlocksDS toolchain.
 - Anadune & Floppy for the music.
+- Many kind people that made free 3D assets I used for the graphics.
 
 ## Donate:
 This game is totally free and if you enjoy this project and would like to support its development, any donation, no matter how small, would be greatly appreciated. I'm a teenager and I really don't have much time with school and other stuff, so your generosity helps motivate me and dedicate more time to continue working this and other games and bring new features to life. Thank you for considering a contribution!
