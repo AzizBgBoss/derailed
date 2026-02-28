@@ -176,7 +176,7 @@ void setWorldTile(int x, int y, int tile)
     {
         worldTerrain[x][y] = tile;
         worldHealth[x][y] = 3;
-        worldVariants[x][y] = hash((x << 16) | y, seed) % 4;
+        worldVariants[x][y] = hash2d(x, y, seed) % TILE_VARIANTS;
 
         if (x >= (chunk - 5) * 4 && x <= chunk * 4)
         {
@@ -1521,11 +1521,11 @@ generate:
     dmaFillHalfWords(TILE_EMPTY, bg0Map, 64 * 64 * 2);
     dmaFillHalfWords(EMPTY, bg1Map, 64 * 64 * 2);
 
-    oamInit(&oamMain, SpriteMapping_1D_128, false);
+    oamInit(&oamMain, SpriteMapping_1D_128, true);
 
     // Allocate space for the tiles and copy them there
-    player.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-    dmaCopy(playerTiles, player.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    player.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x32, SpriteColorFormat_256Color);
+    dmaCopy(playerTiles, player.gfx, 8 * 8 * 8); // Tile size X * Y * 8 tiles * 2 bytes (u16)
     u16 *cursorGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
     dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
     locomotive.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
@@ -1534,20 +1534,30 @@ generate:
     dmaCopy(wagonsTiles + 8 * 8 * 2, railStorage.gfx, 8 * 8 * 4 * 2);
     railBuilder.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles + 8 * 8 * 2 * 2, railBuilder.gfx, 8 * 8 * 4 * 2);
-    player2.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
+    player2.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x32, SpriteColorFormat_256Color);
     if (gameMode == GAMEMODE_ASSISTED)
-        dmaCopy(robotTiles, player2.gfx, 8 * 8 * 4);
+        dmaCopy(robotTiles, player2.gfx, 8 * 8 * 8);
     else
-        dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 4); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+        dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 8); // Tile size X * Y * 4 tiles * 2 bytes (u16)
 
-    // Copy palette
-    dmaCopy(playerPal, SPRITE_PALETTE, playerPalLen);
+    // Map VRAM as LCD because it can't be accessed by the CPU while it is
+    // mapped as extended palette VRAM.
+    vramSetBankF(VRAM_F_LCD);
+
+    // Copy palettes
+    memcpy(VRAM_F_EXT_SPR_PALETTE[0], playerPal, playerPalLen);
+    memcpy(VRAM_F_EXT_SPR_PALETTE[1], robotPal, robotPalLen);
+    memcpy(VRAM_F_EXT_SPR_PALETTE[2], wagonsPal, wagonsPalLen);
+    memcpy(VRAM_F_EXT_SPR_PALETTE[3], uiPal, uiPalLen);
+
+    // Map some VRAM to be used as extended palettes
+    vramSetBankF(VRAM_F_SPRITE_EXT_PALETTE);
 
     oamSet(&oamMain, 0,
            0, 0,                                         // X, Y
            0,                                            // Priority
            0,                                            // Palette index
-           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           SpriteSize_16x32, SpriteColorFormat_256Color, // Size, format
            player.gfx,                                   // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
@@ -1557,7 +1567,7 @@ generate:
     oamSet(&oamMain, 1,
            0, 0,                                         // X, Y
            0,                                            // Priority
-           0,                                            // Palette index
+           3,                                            // Palette index
            SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
            cursorGfx,                                    // Graphics offset
            -1,                                           // Affine index
@@ -1569,7 +1579,7 @@ generate:
     oamSet(&oamMain, 2,
            0, 0,                                         // X, Y
            0,                                            // Priority
-           0,                                            // Palette index
+           2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            locomotive.gfx,                               // Graphics offset
            -1,                                           // Affine index
@@ -1581,7 +1591,7 @@ generate:
     oamSet(&oamMain, 3,
            0, 0,                                         // X, Y
            0,                                            // Priority
-           0,                                            // Palette index
+           2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            railStorage.gfx,                              // Graphics offset
            -1,                                           // Affine index
@@ -1593,7 +1603,7 @@ generate:
     oamSet(&oamMain, 4,
            0, 0,                                         // X, Y
            0,                                            // Priority
-           0,                                            // Palette index
+           2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            railBuilder.gfx,                              // Graphics offset
            -1,                                           // Affine index
@@ -1605,8 +1615,8 @@ generate:
     oamSet(&oamMain, 5,
            0, 0,                                         // X, Y
            0,                                            // Priority
-           0,                                            // Palette index
-           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           1,                                            // Palette index
+           SpriteSize_16x32, SpriteColorFormat_256Color, // Size, format
            player2.gfx,                                  // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
@@ -1722,8 +1732,13 @@ generate:
         int newX = player.x;
         int newY = player.y;
 
-        if (frames % 10 == 0)
-            player.animationFrame = (player.animationFrame + 1) % 4;
+        if (frames % 5 == 0) // Game is 60 FPS, but animation is 12 FPS
+        {
+            if (player.objectHeld == EMPTY)
+                player.animationFrame = ((player.animationFrame + 1) % 12) + 1; // Animation frames are 1-12
+            else
+                player.animationFrame = ((player.animationFrame + 1) % 12) + 1 + 1 + 12; // Animations with object held are 14-25
+        }
 
         if (held & KEY_UP)
         {
@@ -1749,11 +1764,12 @@ generate:
 
         if (!(held & (KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT)))
         {
-            player.animationFrame = 0;
-            dmaCopy(((gameMode == GAMEMODE_CLIENT) ? player2Tiles : playerTiles) + 8 * 8 * 4 * player.direction, player.gfx, 8 * 8 * 4);
+            if (player.objectHeld == EMPTY)
+                player.animationFrame = 0;
+            else
+                player.animationFrame = 13;
         }
-        else
-            dmaCopy(((gameMode == GAMEMODE_CLIENT) ? player2Tiles : playerTiles) + 8 * 8 * 4 * player.direction + 8 * 8 * player.animationFrame, player.gfx, 8 * 8 * 4);
+        dmaCopy(((gameMode == GAMEMODE_CLIENT) ? player2Tiles : playerTiles) + 8 * 8 * 2 * PLAYER_SPRITESHEET_WIDTH * player.direction + 8 * 8 * 2 * player.animationFrame, player.gfx, 8 * 8 * 8);
 
         if (!checkCollision(newX, player.y))
             player.x = newX;
@@ -2157,15 +2173,22 @@ generate:
 
             if (new2X == player2.x && new2Y == player2.y)
             {
-                player2.animationFrame = 0;
-                dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction, player2.gfx, 8 * 8 * 4);
+                if (searchStep != SEARCH_RETURNING)
+                    player2.animationFrame = 0;
+                else
+                    player2.animationFrame = 13;
             }
             else
             {
-                if (frames % 10 == 0)
-                    player2.animationFrame = (player2.animationFrame + 1) % 4;
-                dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
+                if (frames % 5 == 0) // Game is 60 FPS, but animation is 12 FPS
+                {
+                    if (searchStep != SEARCH_RETURNING)
+                        player2.animationFrame = ((player2.animationFrame + 1) % 12) + 1; // Animation frames are 1-12
+                    else
+                        player2.animationFrame = ((player2.animationFrame + 1) % 12) + 1 + 1 + 12; // Animations with object held are 14-25
+                }
             }
+            dmaCopy(robotTiles + 8 * 8 * 2 * PLAYER_SPRITESHEET_WIDTH * player2.direction + 8 * 8 * 2 * player2.animationFrame, player2.gfx, 8 * 8 * 8);
 
             // if (!checkCollision(new2X, player2.y))
             {
@@ -2177,7 +2200,7 @@ generate:
             }
         }
 
-        if (gameMode == GAMEMODE_ASSISTED && frames % 60 == 0)
+        if (gameMode == GAMEMODE_ASSISTED && frames % 15 == 0)
         {
             if (searchStep == SEARCH_SEARCHING)
             {
@@ -2262,7 +2285,7 @@ generate:
             oamSetXY(&oamMain, 1, -16, -16);
 
         if (player.x >= scroll - TILE_SIZE && player.x < scroll + SCREEN_WIDTH)
-            oamSetXY(&oamMain, 0, player.x - scroll, player.y);
+            oamSetXY(&oamMain, 0, player.x - scroll, player.y - PLAYER_SPRITE_Y_OFFSET);
         else
             oamSetXY(&oamMain, 0, -16, -16);
 
@@ -2277,14 +2300,12 @@ generate:
             {
                 if (player2.x >= scroll - TILE_SIZE && player2.x < scroll + SCREEN_WIDTH)
                 {
-                    oamSetXY(&oamMain, 5, player2.x - scroll, player2.y);
+                    oamSetXY(&oamMain, 5, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET);
 
                     if (gameMode == GAMEMODE_HOST)
                         dmaCopy(player2Tiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                     else if (gameMode == GAMEMODE_CLIENT)
                         dmaCopy(playerTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
-                    else if (gameMode == GAMEMODE_ASSISTED)
-                        dmaCopy(robotTiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                 }
                 else
                     oamSetXY(&oamMain, 5, -16, -16);

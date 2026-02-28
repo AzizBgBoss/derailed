@@ -55,6 +55,16 @@ int hash(uint32_t x, int seed)
 								   // Note: This will return a value in the range [0, 255] which is suitable for use in Perlin noise calculations.
 }
 
+int hash2d(int x, int y, int seed)
+{
+    uint32_t data[2];
+    data[0] = (uint32_t)x;
+    data[1] = (uint32_t)y;
+
+    uint32_t h = murmur3_32((const uint8_t*)data, sizeof(data), seed);
+    return (int)(h & 0x7fffffff);
+}
+
 // Linear interpolation
 float lerp(float a, float b, float t)
 {

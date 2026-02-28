@@ -7,7 +7,12 @@
 #define WORLD_HEIGHT 12
 #define TILE_SIZE 16
 #define PLAYER_SIZE 16
+#define PLAYER_SPRITE_Y_OFFSET 8
 #define RAILS_Y 5
+
+#define PLAYER_SPRITESHEET_WIDTH 26
+
+#define TILE_VARIANTS 9
 
 #define MAX_CLIENTS 1 // Keep it 2 players max, for now
 #define MAX_UPDATES 16
@@ -32,9 +37,9 @@ enum Objects
 enum Directions
 {
     DIR_DOWN,
-    DIR_LEFT,
     DIR_RIGHT,
-    DIR_UP
+    DIR_LEFT,
+    DIR_UP,
 };
 
 enum Gamemodes
