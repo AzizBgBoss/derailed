@@ -1268,7 +1268,7 @@ start:
         if (keysDown() & KEY_A)
         {
             mmEffect(SFX_SELECTED);
-            
+
             if (selection == 2 || selection == 3) // Host or Join Game, temporary message
             {
                 printf("\x1b[2J");
@@ -2343,7 +2343,18 @@ generate:
             oamSetXY(&oamMain, 1, -16, -16);
 
         if (player.x >= scroll - TILE_SIZE && player.x < scroll + SCREEN_WIDTH)
+        {
             oamSetXY(&oamMain, 0, player.x - scroll, player.y - PLAYER_SPRITE_Y_OFFSET);
+
+            if (player.objectHeld && player.quantityHeld)
+            {
+                oamSetXY(&oamMain, 6, player.x - scroll, player.y - PLAYER_SPRITE_Y_OFFSET - 8);
+            }
+            else
+            {
+                oamSetXY(&oamMain, 6, -16, -16);
+            }
+        }
         else
             oamSetXY(&oamMain, 0, -16, -16);
 
@@ -2360,6 +2371,21 @@ generate:
                 {
                     oamSetXY(&oamMain, 5, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET);
 
+                    if (gameMode == GAMEMODE_ASSISTED)
+                    {
+                        if (searchStep == SEARCH_RETURNING)
+                            oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
+                        else
+                            oamSetXY(&oamMain, 7, -16, -16);
+                    }
+                    else if (gameMode == GAMEMODE_HOST || gameMode == GAMEMODE_CLIENT)
+                    {
+                        if (player2.objectHeld && player2.quantityHeld)
+                            oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
+                        else
+                            oamSetXY(&oamMain, 7, -16, -16);
+                    }
+
                     if (gameMode == GAMEMODE_HOST)
                         dmaCopy(player2Tiles + 8 * 8 * 4 * player2.direction + 8 * 8 * player2.animationFrame, player2.gfx, 8 * 8 * 4);
                     else if (gameMode == GAMEMODE_CLIENT)
@@ -2373,30 +2399,6 @@ generate:
         }
         else
             oamSetXY(&oamMain, 5, -16, -16);
-
-        if (player.objectHeld && player.quantityHeld)
-        {
-            oamSetXY(&oamMain, 6, player.x - scroll, player.y - PLAYER_SPRITE_Y_OFFSET - 8);
-        }
-        else
-        {
-            oamSetXY(&oamMain, 6, -16, -16);
-        }
-
-        if (gameMode == GAMEMODE_ASSISTED)
-        {
-            if (searchStep == SEARCH_RETURNING)
-                oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
-            else
-                oamSetXY(&oamMain, 7, -16, -16);
-        }
-        else if (gameMode == GAMEMODE_HOST || gameMode == GAMEMODE_CLIENT)
-        {
-            if (player2.objectHeld && player2.quantityHeld)
-                oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
-            else
-                oamSetXY(&oamMain, 7, -16, -16);
-        }
 
         bgSetScroll(bg0, scroll, 0);
         bgSetScroll(bg1, scroll, 0);
