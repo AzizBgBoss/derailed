@@ -53,7 +53,8 @@ Initial commit with basic project structure.
 - Added Bobot, your (optional) assistant robot. ***(done)***
 
 ### Version 1.1 (Working on it):
-- Reimagine the art.
+- Add particles.
+- Reimagine the art. ***(done)***
 - Added a pause menu.
 - Better looking UI.
 - Fix the multiplayer bugs.
