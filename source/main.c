@@ -427,7 +427,7 @@ void setBobotSearch(int type, int object)
     if (type == SEARCH_RETURNING)
         dmaCopy(uiTiles + 8 * 8 * (object - 6), player2.heldItemGfx, 8 * 8 * 4);
     else
-        dmaCopy(uiTiles, player.heldItemGfx, 8 * 8 * 4);
+        dmaCopy(uiTiles, player2.heldItemGfx, 8 * 8 * 4);
 
     setBobotMessage(type, object);
 }
