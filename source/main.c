@@ -84,6 +84,7 @@ struct Player
     int selectedWagonSlot;
     bool selectedWagon;
     int animationFrame;
+    u16 *heldItemGfx;
 };
 
 struct Wagon
@@ -101,7 +102,7 @@ struct Wagon
     int acceptedObjects[2];
 };
 
-struct Player player = {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0};
+struct Player player = {NULL, 0, 0, DIR_DOWN, EMPTY, 0, 3, 0, 0, false, 0, 0, false, 0, NULL};
 
 struct Player player2;
 
@@ -271,6 +272,7 @@ void setPlayerObjectHeld(int object)
     if (gameMode != GAMEMODE_CLIENT)
     {
         player.objectHeld = object;
+        dmaCopy(uiTiles + 8 * 8 * (object - 6), player.heldItemGfx, 8 * 8 * 4);
     }
 
     queueUpdate(0, 0, ACTION_SETPLAYEROBJECTHELD, object);
@@ -282,7 +284,10 @@ void setPlayerQuantity(int quantity)
     {
         player.quantityHeld = quantity;
         if (player.quantityHeld == 0)
+        {
             player.objectHeld = EMPTY;
+            dmaCopy(uiTiles, player.heldItemGfx, 8 * 8 * 4);
+        }
     }
 
     queueUpdate(0, 0, ACTION_SETPLAYERQUANTITY, quantity);
@@ -418,6 +423,11 @@ void setBobotSearch(int type, int object)
 {
     searchStep = type;
     searchObject = object;
+
+    if (type == SEARCH_RETURNING)
+        dmaCopy(uiTiles + 8 * 8 * (object - 6), player2.heldItemGfx, 8 * 8 * 4);
+    else
+        dmaCopy(uiTiles, player.heldItemGfx, 8 * 8 * 4);
 
     setBobotMessage(type, object);
 }
@@ -1258,6 +1268,25 @@ start:
         if (keysDown() & KEY_A)
         {
             mmEffect(SFX_SELECTED);
+            
+            if (selection == 2 || selection == 3) // Host or Join Game, temporary message
+            {
+                printf("\x1b[2J");
+                printf("Multiplayer features are currently in testing and may be unstable. If you encounter any bugs (and you will), please report them on the GitHub page at\nhttps://github.com/AzizBgBoss/derailed/\n\nPress A to continue...\n");
+                while (1)
+                {
+                    swiWaitForVBlank();
+
+                    scanKeys();
+
+                    u16 keys_down = keysDown();
+                    if (keys_down & KEY_A)
+                    {
+                        break;
+                    }
+                }
+            }
+
             if (selection == 0) // Choose Seed
             {
                 printf("\x1b[2J");
@@ -1527,7 +1556,7 @@ generate:
     player.gfx = oamAllocateGfx(&oamMain, SpriteSize_16x32, SpriteColorFormat_256Color);
     dmaCopy(playerTiles, player.gfx, 8 * 8 * 8); // Tile size X * Y * 8 tiles * 2 bytes (u16)
     u16 *cursorGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
-    dmaCopy(uiTiles + 8 * 8 * 4, cursorGfx, 8 * 8 * 4);
+    dmaCopy(uiTiles + 8 * 8, cursorGfx, 8 * 8 * 4);
     locomotive.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
     dmaCopy(wagonsTiles, locomotive.gfx, 8 * 8 * 4 * 2);
     railStorage.gfx = oamAllocateGfx(&oamMain, SpriteSize_32x16, SpriteColorFormat_256Color);
@@ -1539,6 +1568,10 @@ generate:
         dmaCopy(robotTiles, player2.gfx, 8 * 8 * 8);
     else
         dmaCopy(player2Tiles, player2.gfx, 8 * 8 * 8); // Tile size X * Y * 4 tiles * 2 bytes (u16)
+    player.heldItemGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
+    dmaCopy(uiTiles, player.heldItemGfx, 8 * 8 * 4);
+    player2.heldItemGfx = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_256Color);
+    dmaCopy(uiTiles, player2.heldItemGfx, 8 * 8 * 4);
 
     // Map VRAM as LCD because it can't be accessed by the CPU while it is
     // mapped as extended palette VRAM.
@@ -1555,7 +1588,7 @@ generate:
 
     oamSet(&oamMain, 0,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           1,                                            // Priority
            0,                                            // Palette index
            SpriteSize_16x32, SpriteColorFormat_256Color, // Size, format
            player.gfx,                                   // Graphics offset
@@ -1564,9 +1597,10 @@ generate:
            false,                                        // Hide
            false, false,                                 // H flip, V flip
            false);                                       // Mosaic
+
     oamSet(&oamMain, 1,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           2,                                            // Priority
            3,                                            // Palette index
            SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
            cursorGfx,                                    // Graphics offset
@@ -1578,7 +1612,7 @@ generate:
 
     oamSet(&oamMain, 2,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           2,                                            // Priority
            2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            locomotive.gfx,                               // Graphics offset
@@ -1590,7 +1624,7 @@ generate:
 
     oamSet(&oamMain, 3,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           2,                                            // Priority
            2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            railStorage.gfx,                              // Graphics offset
@@ -1602,7 +1636,7 @@ generate:
 
     oamSet(&oamMain, 4,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           2,                                            // Priority
            2,                                            // Palette index
            SpriteSize_32x16, SpriteColorFormat_256Color, // Size, format
            railBuilder.gfx,                              // Graphics offset
@@ -1614,10 +1648,34 @@ generate:
 
     oamSet(&oamMain, 5,
            0, 0,                                         // X, Y
-           0,                                            // Priority
+           1,                                            // Priority
            1,                                            // Palette index
            SpriteSize_16x32, SpriteColorFormat_256Color, // Size, format
            player2.gfx,                                  // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+
+    oamSet(&oamMain, 6,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           3,                                            // Palette index
+           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           player.heldItemGfx,                           // Graphics offset
+           -1,                                           // Affine index
+           false,                                        // Double size
+           false,                                        // Hide
+           false, false,                                 // H flip, V flip
+           false);                                       // Mosaic
+
+    oamSet(&oamMain, 7,
+           0, 0,                                         // X, Y
+           0,                                            // Priority
+           3,                                            // Palette index
+           SpriteSize_16x16, SpriteColorFormat_256Color, // Size, format
+           player2.heldItemGfx,                          // Graphics offset
            -1,                                           // Affine index
            false,                                        // Double size
            false,                                        // Hide
@@ -1669,7 +1727,7 @@ generate:
         if (down & KEY_SELECT)
             debugMode = !debugMode;
 
-        if (gameMode == GAMEMODE_ASSISTED && searchStep == SEARCH_IDLE)
+        if (gameMode == GAMEMODE_ASSISTED && searchStep != SEARCH_RETURNING)
         {
             if (down & KEY_L)
             {
@@ -2315,6 +2373,30 @@ generate:
         }
         else
             oamSetXY(&oamMain, 5, -16, -16);
+
+        if (player.objectHeld && player.quantityHeld)
+        {
+            oamSetXY(&oamMain, 6, player.x - scroll, player.y - PLAYER_SPRITE_Y_OFFSET - 8);
+        }
+        else
+        {
+            oamSetXY(&oamMain, 6, -16, -16);
+        }
+
+        if (gameMode == GAMEMODE_ASSISTED)
+        {
+            if (searchStep == SEARCH_RETURNING)
+                oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
+            else
+                oamSetXY(&oamMain, 7, -16, -16);
+        }
+        else if (gameMode == GAMEMODE_HOST || gameMode == GAMEMODE_CLIENT)
+        {
+            if (player2.objectHeld && player2.quantityHeld)
+                oamSetXY(&oamMain, 7, player2.x - scroll, player2.y - PLAYER_SPRITE_Y_OFFSET - 8);
+            else
+                oamSetXY(&oamMain, 7, -16, -16);
+        }
 
         bgSetScroll(bg0, scroll, 0);
         bgSetScroll(bg1, scroll, 0);
