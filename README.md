@@ -28,10 +28,6 @@ You can either compile the game yourself (for nightly releases) or check for sta
 | Flashcarts (DS/DS Lite/DSi)      | Not tested yet            | Not tested yet        | There is no saving in the game for now so it should work even without a DLDI patch. |
 | melonDS (Windows Emulator)       | Good                      | Laggy multiplayer     | None          |
 
-## Download the latest version (QR code scannable with DSi Downloader)
-
-![QR](media/frame.png)
-
 ## Gameplay:
 Check tutorial on main menu.
 - D-Pad: Move
@@ -52,8 +48,9 @@ Initial commit with basic project structure.
 - Local multiplayer. ***(done but buggy)***
 - Added Bobot, your (optional) assistant robot. ***(done)***
 
-### Version 1.1 (Working on it):
+### Version 1.1alpha ([![Download](https://img.shields.io/github/downloads/AzizBgBoss/derailed/1.1alpha/total.svg?label=Download)](https://github.com/AzizBgBoss/derailed/releases/tag/1.1alpha)):
 - Reimagine the art. ***(done)***
+### Version 1.1 (Working on it):
 - Add particles.
 - Added a pause menu.
 - Better looking UI.
